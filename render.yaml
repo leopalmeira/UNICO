@@ -1,14 +1,12 @@
 services:
   - type: web
-    name: edufocus-escola-backend
+    name: edufocus-system
     env: node
-    region: oregon
     plan: free
-    rootDir: server
-    buildCommand: npm install
-    startCommand: node server.js
+    buildCommand: npm install && cd client && npm install && npm run build && cd ../server && npm install
+    startCommand: cd server && node server.js
     envVars:
+      - key: NODE_VERSION
+        value: 20.11.0
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 5000
