@@ -73,7 +73,12 @@ export default function EmployeeAttendancePanel({ schoolId }) {
 
     const loadTodayRecords = async () => {
         try {
-            const today = new Date().toISOString().split('T')[0];
+            const dateObj = new Date();
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            const today = `${year}-${month}-${day}`;
+
             const res = await api.get(`/school/employee-attendance?date=${today}`);
 
             const uniqueRecords = [];

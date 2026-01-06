@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Users, GraduationCap, ClipboardCheck, HelpCircle, FileText, BarChart3, MessageCircle, Menu, Camera, Clock, Calendar } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
-import WhatsAppPanel from '../components/WhatsAppPanel';
+import WhatsAppPanel from '../components/WhatsAppPanel'; // Manter caso queira voltar
+import SchoolCommunicationPanel from '../components/SchoolCommunicationPanel';
 import ClassesPanel from '../components/ClassesPanel';
 import api from '../api/axios';
 import * as faceapi from 'face-api.js';
@@ -113,7 +114,8 @@ export default function SchoolDashboard() {
                 { id: 'employee-report', label: 'Frequência Funcionários' }
             ]
         },
-        { id: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle size={20} /> },
+        { id: 'events', label: 'Eventos', icon: <Calendar size={20} /> },
+        { id: 'messages', label: 'Mensagens', icon: <MessageCircle size={20} /> },
         { id: 'support', label: 'Suporte', icon: <HelpCircle size={20} /> },
         { id: 'faq', label: 'FAQ', icon: <FileText size={20} /> }
     ];
@@ -783,9 +785,15 @@ export default function SchoolDashboard() {
                     </div>
                 )}
 
-                {activeTab === 'whatsapp' && (
+                {activeTab === 'events' && (
                     <div className="fade-in">
-                        <WhatsAppPanel />
+                        <SchoolCommunicationPanel schoolId={schoolId} initialTab="events" />
+                    </div>
+                )}
+
+                {activeTab === 'messages' && (
+                    <div className="fade-in">
+                        <SchoolCommunicationPanel schoolId={schoolId} initialTab="chat" />
                     </div>
                 )}
 

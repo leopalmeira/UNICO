@@ -8,18 +8,30 @@ const nodemailer = require('nodemailer');
 const { getWhatsAppService } = require('./whatsapp-service');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer'); // Added for Chat
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Serve uploads folder for chat files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const SECRET_KEY = process.env.SECRET_KEY || 'edufocus_secret_key_change_me';
+
+// Middleware para logar todas as requisições - DEBUG
+app.use((req, res, next) => {
+    if (req.method === 'PUT' || req.method === 'DELETE') {
+        console.log(`[DEBUG] ${req.method} ${req.originalUrl}`);
+    }
+    next();
+});
 
 // --- AUTO-RECONNECT WHATSAPP ON BOOT ---
 async function reconnectWhatsAppSessions() {
-    // Desabilitar WhatsApp em produção (Render) para evitar problemas de inicialização
+    // WhatsApp ativado em produção
     if (process.env.NODE_ENV === 'production') {
-        console.log('⚠️ WhatsApp desabilitado em produção (Render)');
-        return;
+        console.log('✅ WhatsApp ativado em produção (Render)');
+        // return;  <-- Permitir execução
     }
 
     const authBasePath = path.join(__dirname, 'whatsapp-auth');
@@ -2606,6 +2618,57 @@ app.get('/school/:schoolId/class/:classId/students', authenticateToken, async (r
     }
 });
 
+// Buscar frequência do aluno (para o App do Responsável)
+app.get('/api/guardian/student-attendance', authenticateGuardian, (req, res) => {
+    const guardianId = req.user.id;
+    const { schoolId, studentId, month, year } = req.query;
+
+    if (!schoolId || !studentId) {
+        return res.status(400).json({ error: 'School ID and Student ID are required' });
+    }
+
+    try {
+        const schoolDB = getSchoolDB(schoolId);
+
+        // 1. Verificar se o guardian tem vínculo com este aluno
+        const link = schoolDB.prepare(`
+            SELECT id FROM student_guardians 
+            WHERE student_id = ? AND guardian_id = ? AND status = 'active'
+        `).get(studentId, guardianId);
+
+        if (!link) {
+            return res.status(403).json({ error: 'Acesso negado. Você não tem vínculo ativo com este aluno nesta escola.' });
+        }
+
+        // 2. Buscar frequência
+        let query = `SELECT * FROM attendance WHERE student_id = ?`;
+        const params = [studentId];
+
+        if (month && year) {
+            // SQLite strftime para filtrar por mês/ano
+            // month deve ser '01', '02', ..., '12'
+            // year deve ser '2025', etc.
+            const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+            const endDate = `${year}-${String(month).padStart(2, '0')}-31`; // Simplificação, SQLite date function lida com dias excedentes se usar date()
+
+            // Melhor usar BETWEEN com datas completas
+            // Mas vamos usar strftime como no resto do codigo se houver padrao, 
+            // ou date(). Vamos usar date range simples.
+            query += ` AND date(timestamp) BETWEEN date(?) AND date(?)`;
+            params.push(startDate, endDate);
+        }
+
+        query += ` ORDER BY timestamp DESC`;
+
+        const records = schoolDB.prepare(query).all(...params);
+        res.json(records);
+
+    } catch (error) {
+        console.error('Erro ao buscar frequência para responsible:', error);
+        res.status(500).json({ error: 'Erro ao buscar dados de frequência' });
+    }
+});
+
 // Listar professores de uma turma
 app.get('/school/:schoolId/class/:classId/teachers', authenticateToken, async (req, res) => {
     try {
@@ -4425,6 +4488,39 @@ app.post('/api/school/employee-attendance', authenticateToken, (req, res) => {
     }
 });
 
+// Buscar registros de frequência de ALUNOS
+app.get('/api/school/attendance', authenticateToken, (req, res) => {
+    if (req.user.role !== 'school_admin' && req.user.role !== 'receptionist') return res.sendStatus(403);
+
+    const schoolId = req.user.id;
+    const { startDate, endDate } = req.query;
+    const schoolDB = getSchoolDB(schoolId);
+
+    try {
+        let query = `
+            SELECT a.*, s.name as student_name, s.class_name 
+            FROM attendance a
+            JOIN students s ON a.student_id = s.id
+        `;
+        const params = [];
+
+        if (startDate && endDate) {
+            query += ` WHERE date(a.timestamp) BETWEEN date(?) AND date(?)`;
+            params.push(startDate, endDate);
+        } else {
+            query += ` WHERE date(a.timestamp) = date('now', 'localtime')`;
+        }
+
+        query += ` ORDER BY a.timestamp DESC`;
+
+        const records = schoolDB.prepare(query).all(...params);
+        res.json(records);
+    } catch (error) {
+        console.error('Erro ao buscar frequência de alunos:', error);
+        res.status(500).json({ error: 'Erro ao buscar dados' });
+    }
+});
+
 // Buscar registros de ponto de funcionários
 app.get('/api/school/employee-attendance', authenticateToken, (req, res) => {
     if (req.user.role !== 'school_admin') return res.sendStatus(403);
@@ -4570,8 +4666,17 @@ function authenticateGuardian(req, res, next) {
 // Listar todas as escolas (para dropdown no app)
 app.get('/api/guardian/schools', (req, res) => {
     const db = getSystemDB();
+    const { search } = req.query;
     try {
-        const schools = db.prepare('SELECT id, name FROM schools WHERE status = ?').all('active');
+        let query = 'SELECT id, name FROM schools WHERE status = ?';
+        const params = ['active'];
+
+        if (search) {
+            query += ' AND name LIKE ?';
+            params.push(`%${search}%`);
+        }
+
+        const schools = db.prepare(query).all(...params);
         res.json(schools);
     } catch (error) {
         console.error('Erro ao listar escolas:', error);
@@ -4579,61 +4684,99 @@ app.get('/api/guardian/schools', (req, res) => {
     }
 });
 
+// Listar turmas de uma escola específica
+app.get('/api/guardian/schools/:schoolId/classes', authenticateGuardian, (req, res) => {
+    const { schoolId } = req.params;
+    try {
+        const schoolDB = getSchoolDB(schoolId);
+        // Buscar turmas que têm alunos
+        const classes = schoolDB.prepare('SELECT DISTINCT class_name as name FROM students WHERE class_name IS NOT NULL ORDER BY class_name').all();
+        res.json(classes);
+    } catch (error) {
+        console.error('Erro ao listar turmas:', error);
+        res.status(500).json({ error: 'Erro ao listar turmas' });
+    }
+});
+
+// Buscar aluno por nome e (opcionalmente) turma para confirmação visual
+app.get('/api/guardian/schools/:schoolId/students/search', authenticateGuardian, (req, res) => {
+    const { schoolId } = req.params;
+    const { name, className } = req.query;
+
+    try {
+        const schoolDB = getSchoolDB(schoolId);
+        let query = 'SELECT id, name, class_name, photo_url FROM students WHERE 1=1';
+        const params = [];
+
+        if (name) {
+            query += ' AND name LIKE ?';
+            params.push(`%${name}%`);
+        }
+
+        if (className) {
+            query += ' AND class_name = ?';
+            params.push(className);
+        }
+
+        query += ' LIMIT 5'; // Limitar resultados para segurança/performance
+
+        const students = schoolDB.prepare(query).all(...params);
+        res.json(students);
+    } catch (error) {
+        console.error('Erro ao buscar alunos:', error);
+        res.status(500).json({ error: 'Erro ao buscar alunos' });
+    }
+});
+
 // Vincular aluno (AUTOMÁTICO - sem aprovação da escola)
 app.post('/api/guardian/link-student', authenticateGuardian, async (req, res) => {
-    const { schoolId, studentName, className } = req.body;
+    const { school_id, student_id } = req.body; // Aceita snake_case do frontend
     const guardianId = req.user.id;
     const db = getSystemDB();
 
-    try {
-        // Buscar aluno no banco da escola
-        const schoolDB = getSchoolDB(schoolId);
+    // Compatibilidade com camelCase se necessário
+    const finalSchoolId = school_id || req.body.schoolId;
+    const finalStudentId = student_id || req.body.studentId;
 
-        // Busca case-insensitive
-        const student = schoolDB.prepare(`
-            SELECT * FROM students 
-            WHERE LOWER(name) = LOWER(?) AND LOWER(class_name) = LOWER(?)
-        `).get(studentName, className);
+    if (!finalSchoolId || !finalStudentId) {
+        return res.status(400).json({ error: 'Dados incompletos' });
+    }
+
+    try {
+        // Buscar aluno no banco da escola para confirmar existência
+        const schoolDB = getSchoolDB(finalSchoolId);
+        const student = schoolDB.prepare('SELECT * FROM students WHERE id = ?').get(finalStudentId);
 
         if (!student) {
             return res.status(404).json({
                 error: 'Aluno não encontrado',
-                message: 'Verifique se o nome e a turma estão corretos'
+                message: 'Verifique se o aluno selecionado ainda existe.'
             });
         }
 
         // Verificar se já existe vínculo
-        const existingLink = schoolDB.prepare(`
-            SELECT * FROM student_guardians 
+        const linkExists = schoolDB.prepare(`
+            SELECT id FROM student_guardians 
             WHERE student_id = ? AND guardian_id = ?
-        `).get(student.id, guardianId);
+        `).get(finalStudentId, guardianId);
 
-        if (existingLink) {
-            return res.status(400).json({ error: 'Aluno já vinculado a esta conta' });
+        if (linkExists) {
+            return res.status(400).json({ error: 'Aluno já vinculado' });
         }
 
-        // Criar vínculo AUTOMÁTICO
-        const result = schoolDB.prepare(`
-            INSERT INTO student_guardians (student_id, guardian_id, status)
-            VALUES (?, ?, 'active')
-        `).run(student.id, guardianId);
+        // Criar vínculo
+        schoolDB.prepare(`
+            INSERT INTO student_guardians (student_id, guardian_id, relationship, status)
+            VALUES (?, ?, ?, ?)
+        `).run(finalStudentId, guardianId, 'Responsável', 'active');
 
-        console.log(`✅ Vínculo automático criado: Guardian ${guardianId} → Aluno ${student.name} (Escola ${schoolId})`);
+        console.log(`✅ Vínculo criado: Guardian ${guardianId} -> Aluno ${student.name}`);
 
-        res.json({
-            success: true,
-            message: 'Aluno vinculado com sucesso!',
-            student: {
-                id: student.id,
-                name: student.name,
-                class_name: student.class_name,
-                photo_url: student.photo_url,
-                schoolId: schoolId
-            }
-        });
+        res.json({ success: true, message: 'Vínculo criado com sucesso!' });
+
     } catch (error) {
         console.error('Erro ao vincular aluno:', error);
-        res.status(500).json({ error: 'Erro ao vincular aluno' });
+        res.status(500).json({ error: 'Erro interno ao vincular aluno' });
     }
 });
 
@@ -4708,34 +4851,44 @@ app.get('/api/guardian/check-notifications', authenticateGuardian, (req, res) =>
 
             // Buscar alunos deste guardian nesta escola
             const students = schoolDB.prepare(`
-                SELECT s.id, s.name, s.class_name, sc.linked_at
+                SELECT s.id, s.name, s.class_name, s.photo_url, sc.linked_at
                 FROM students s
                 JOIN student_guardians sc ON s.id = sc.student_id
                 WHERE sc.guardian_id = ? AND sc.status = 'active'
             `).all(guardianId);
 
             if (students.length === 0) continue;
-            // Para cada aluno, verificar presença recente
+            // Para cada aluno, verificar presença recente não notificada
             for (const student of students) {
-                // Presença nos últimos 15 segundos
+                // Presença recente não notificada
                 const presence = schoolDB.prepare(`
                     SELECT * FROM access_logs
                     WHERE student_id = ?
-                    AND timestamp > datetime('now', '-15 seconds')
+                    AND notified_guardian = 0
                     ORDER BY timestamp DESC
                     LIMIT 1
                 `).get(student.id);
 
                 if (presence) {
                     notification = {
+                        id: presence.id, // ID Obrigatório para marcar como lida se precisar, ou tracking
+                        student_name: student.name,
                         studentName: student.name,
+                        class_name: student.class_name,
                         className: student.class_name,
-                        schoolName: school.name, // Adicionado nome da escola
+                        school_name: school.name,
+                        schoolName: school.name,
                         timestamp: presence.timestamp,
-                        type: presence.type,
+                        event_type: presence.event_type || presence.type, // Tenta event_type (correto no access_logs), fallback para type
+                        type: presence.event_type || presence.type,
+                        photo_url: student.photo_url,
                         photoUrl: student.photo_url
                     };
-                    console.log('Notificação encontrada:', notification); // DEBUG
+
+                    // Marcar como notificado no banco para não enviar novamente
+                    schoolDB.prepare('UPDATE access_logs SET notified_guardian = 1 WHERE id = ?').run(presence.id);
+
+                    console.log('Notificação enviada e marcada como entregue:', notification);
                     break;
                 }
             }
@@ -4753,6 +4906,483 @@ app.get('/api/guardian/check-notifications', authenticateGuardian, (req, res) =>
 // require('./endpoints_guardian')(app); // [REVERTIDO: Voltando para arquitetura separada]
 
 // ==================== FIM DOS ENDPOINTS DE GUARDIANS ====================
+
+// --- CONFIGURAÇÃO MULTER PARA CHAT ---
+const chatStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dir = path.join(__dirname, 'uploads/chat');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        // Sanitizar nome do arquivo para evitar caracteres problematicos
+        const originalNameSafe = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
+        const ext = path.extname(originalNameSafe);
+        cb(null, `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`);
+    }
+});
+const chatUpload = multer({ storage: chatStorage });
+
+// --- ROTAS DE CHAT (MENSAGENS) ---
+
+// 1. GUARDIAN: Listar Mensagens
+app.get('/api/guardian/chat/:studentId/messages', authenticateGuardian, (req, res) => {
+    const guardianId = req.user.id;
+    const { studentId } = req.params;
+    const { schoolId } = req.query;
+
+    if (!schoolId) return res.status(400).json({ error: 'School ID is required' });
+
+    try {
+        const schoolDB = getSchoolDB(schoolId);
+
+        // Verificar permissão
+        const permission = schoolDB.prepare(`
+            SELECT id FROM student_guardians 
+            WHERE guardian_id = ? AND student_id = ? AND status = 'active'
+        `).get(guardianId, studentId);
+
+        if (!permission) return res.sendStatus(403);
+
+        const messages = schoolDB.prepare(`
+            SELECT * FROM messages WHERE student_id = ? ORDER BY created_at ASC
+        `).all(studentId);
+
+        res.json(messages);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Erro ao buscar mensagens' });
+    }
+});
+
+// 2. GUARDIAN: Enviar Mensagem
+app.post('/api/guardian/chat/:studentId/messages', authenticateGuardian, chatUpload.single('file'), (req, res) => {
+    const guardianId = req.user.id;
+    const { studentId } = req.params;
+    const { schoolId, content, type } = req.body;
+
+    if (!schoolId) return res.status(400).json({ error: 'School ID required' });
+
+    try {
+        const schoolDB = getSchoolDB(schoolId);
+
+        // Verificar permissão
+        const permission = schoolDB.prepare(`
+            SELECT id FROM student_guardians 
+            WHERE guardian_id = ? AND student_id = ? AND status = 'active'
+        `).get(guardianId, studentId);
+
+        if (!permission) return res.sendStatus(403);
+
+        const fileUrl = req.file ? `/uploads/chat/${req.file.filename}` : null;
+        const fileName = req.file ? req.file.originalname : null;
+        let msgType = type || 'text';
+
+        if (req.file) {
+            // Se for audio (blob), geralmente não tem extensão direito, mas o multer trata.
+            // Checar mimetype
+            if (req.file.mimetype.startsWith('audio/')) msgType = 'audio';
+            else if (req.file.mimetype.startsWith('image/')) msgType = 'image';
+            else msgType = 'file';
+        }
+
+        const result = schoolDB.prepare(`
+            INSERT INTO messages (sender_type, sender_id, student_id, content, message_type, file_url, file_name)
+            VALUES ('guardian', ?, ?, ?, ?, ?, ?)
+        `).run(guardianId, studentId, content || '', msgType, fileUrl, fileName);
+
+        res.json({ success: true, id: result.lastInsertRowid, fileUrl, fileName, messageType: msgType });
+    } catch (e) {
+        console.error('Erro ao enviar mensagem (Guardian):', e);
+        res.status(500).json({ error: 'Erro ao enviar' });
+    }
+});
+
+// 3. SCHOOL: Listar Mensagens
+app.get('/api/school/chat/:studentId/messages', authenticateToken, (req, res) => {
+    if (!['school_admin', 'teacher', 'receptionist'].includes(req.user.role)) return res.sendStatus(403);
+
+    const schoolId = req.user.id;
+    const { studentId } = req.params;
+    const schoolDB = getSchoolDB(schoolId);
+
+    try {
+        const messages = schoolDB.prepare(`
+            SELECT * FROM messages WHERE student_id = ? ORDER BY created_at ASC
+        `).all(studentId);
+        res.json(messages);
+    } catch (e) {
+        res.status(500).json({ error: 'Erro ao buscar mensagens' });
+    }
+});
+
+// 4. SCHOOL: Enviar Mensagem
+app.post('/api/school/chat/:studentId/messages', authenticateToken, chatUpload.single('file'), (req, res) => {
+    if (!['school_admin', 'teacher', 'receptionist'].includes(req.user.role)) return res.sendStatus(403);
+
+    const schoolId = req.user.id;
+    const { studentId } = req.params;
+    const { content, type } = req.body;
+    const schoolDB = getSchoolDB(schoolId);
+
+    try {
+        const fileUrl = req.file ? `/uploads/chat/${req.file.filename}` : null;
+        const fileName = req.file ? req.file.originalname : null;
+        let msgType = type || 'text';
+
+        if (req.file) {
+            if (req.file.mimetype.startsWith('audio/')) msgType = 'audio';
+            else if (req.file.mimetype.startsWith('image/')) msgType = 'image';
+            else msgType = 'file';
+        }
+
+        const result = schoolDB.prepare(`
+            INSERT INTO messages (sender_type, sender_id, student_id, content, message_type, file_url, file_name)
+            VALUES ('school', ?, ?, ?, ?, ?, ?)
+        `).run(schoolId, studentId, content || '', msgType, fileUrl, fileName);
+
+        res.json({ success: true, id: result.lastInsertRowid, fileUrl, fileName, messageType: msgType });
+    } catch (e) {
+        console.error('Erro ao enviar mensagem (School):', e);
+        res.status(500).json({ error: 'Erro ao enviar' });
+    }
+});
+
+// 5. SCHOOL: Enviar Mensagem Coletiva (Broadcast)
+app.post('/api/school/chat/broadcast', authenticateToken, chatUpload.single('file'), (req, res) => {
+    if (!['school_admin', 'teacher', 'receptionist'].includes(req.user.role)) return res.sendStatus(403);
+
+    const schoolId = req.user.id;
+    const { classId, content, type } = req.body;
+    const schoolDB = getSchoolDB(schoolId);
+
+    try {
+        const cls = schoolDB.prepare('SELECT name FROM classes WHERE id = ?').get(classId);
+        if (!cls) return res.status(404).json({ error: 'Turma não encontrada' });
+
+        const studentsInClass = schoolDB.prepare('SELECT id FROM students WHERE class_name = ?').all(cls.name);
+
+        const fileUrl = req.file ? `/uploads/chat/${req.file.filename}` : null;
+        const fileName = req.file ? req.file.originalname : null;
+        let msgType = type || 'text';
+
+        if (req.file) {
+            if (req.file.mimetype.startsWith('audio/')) msgType = 'audio';
+            else if (req.file.mimetype.startsWith('image/')) msgType = 'image';
+            else msgType = 'file';
+        }
+
+        const insert = schoolDB.prepare(`
+            INSERT INTO messages (sender_type, sender_id, student_id, content, message_type, file_url, file_name)
+            VALUES ('school', ?, ?, ?, ?, ?, ?)
+        `);
+
+        const transaction = schoolDB.transaction((students) => {
+            for (const s of students) {
+                insert.run(schoolId, s.id, content || '', msgType, fileUrl, fileName);
+            }
+        });
+
+        transaction(studentsInClass);
+
+        res.json({ success: true, count: studentsInClass.length });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Erro ao enviar broadcast' });
+    }
+});
+
+// 6. SCHOOL: Eventos (Criar)
+// 6. SCHOOL: Eventos (Criar)
+app.post('/api/school/events', authenticateToken, (req, res) => {
+    if (!['school_admin', 'teacher', 'receptionist'].includes(req.user.role)) return res.sendStatus(403);
+    const schoolId = req.user.id;
+    const { title, description, event_date, cost, type, class_name, pix_key, payment_deadline } = req.body;
+    const db = getSchoolDB(schoolId);
+    try {
+        const stmt = db.prepare('INSERT INTO events (title, description, event_date, cost, type, class_name, pix_key, payment_deadline) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        stmt.run(title, description, event_date, cost, type || 'event', class_name || null, pix_key || null, payment_deadline || null);
+        res.json({ success: true });
+    } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+});
+
+// 7. SCHOOL: Eventos (Listar - Admin)
+app.get('/api/school/events', authenticateToken, (req, res) => {
+    const schoolId = req.user.id;
+    const db = getSchoolDB(schoolId);
+    try {
+        const events = db.prepare('SELECT * FROM events ORDER BY created_at DESC').all();
+        res.json(events);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 8. SCHOOL: Eventos (Deletar)
+app.delete('/api/school/events/:id', authenticateToken, (req, res) => {
+    if (!['school_admin', 'teacher', 'receptionist'].includes(req.user.role)) return res.sendStatus(403);
+    const schoolId = req.user.id;
+    const db = getSchoolDB(schoolId);
+    try {
+        db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 8.5. SCHOOL: Eventos (Editar)
+app.put('/api/school/events/:id', authenticateToken, (req, res) => {
+    console.log('PUT /api/school/events/:id chamado');
+    console.log('User:', req.user);
+    console.log('Params:', req.params);
+    console.log('Body:', req.body);
+
+    if (!['school_admin', 'teacher', 'receptionist'].includes(req.user.role)) {
+        console.log('Acesso negado - role:', req.user.role);
+        return res.sendStatus(403);
+    }
+    const schoolId = req.user.id;
+    const { title, description, event_date, cost, class_name, pix_key, payment_deadline } = req.body;
+    const db = getSchoolDB(schoolId);
+    try {
+        // Tentar adicionar coluna payment_deadline se não existir
+        try {
+            db.exec('ALTER TABLE events ADD COLUMN payment_deadline DATE');
+            console.log('Coluna payment_deadline adicionada');
+        } catch (e) { /* Coluna já existe, ignorar */ }
+
+        console.log('Executando UPDATE para evento ID:', req.params.id);
+        db.prepare(`
+            UPDATE events 
+            SET title = ?, description = ?, event_date = ?, cost = ?, class_name = ?, pix_key = ?, payment_deadline = ?
+            WHERE id = ?
+        `).run(title, description, event_date, cost || null, class_name || null, pix_key || null, payment_deadline || null, req.params.id);
+        console.log('Evento atualizado com sucesso!');
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Erro ao atualizar evento:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// 9. GUARDIAN: Listar Eventos
+app.get('/api/guardian/events', authenticateGuardian, (req, res) => {
+    const guardianId = req.user.id;
+    console.log('GET /api/guardian/events - guardianId:', guardianId);
+    const db = getSystemDB();
+    try {
+        const schools = db.prepare('SELECT id, name FROM schools').all();
+        console.log('Escolas encontradas:', schools.length);
+        let allEvents = [];
+
+        for (const school of schools) {
+            try {
+                const schoolDB = getSchoolDB(school.id);
+
+                // Verificar se student_guardians existe e se tem vínculo
+                let hasLink = false;
+                let myClasses = [];
+
+                try {
+                    const linkCheck = schoolDB.prepare('SELECT 1 FROM student_guardians WHERE guardian_id = ? AND status = "active"').get(guardianId);
+                    hasLink = !!linkCheck;
+
+                    if (hasLink) {
+                        myClasses = schoolDB.prepare(`
+                            SELECT DISTINCT s.class_name 
+                            FROM students s
+                            JOIN student_guardians sg ON s.id = sg.student_id
+                            WHERE sg.guardian_id = ? AND sg.status = 'active'
+                        `).all(guardianId).map(r => r.class_name).filter(c => c);
+                    }
+                } catch (e) {
+                    // Tabela student_guardians não existe - buscar todos eventos globais
+                    console.log('Tabela student_guardians não existe na escola', school.id);
+                }
+
+                // Buscar eventos: Se tem vínculo, filtra por turma. Senão, busca globais
+                let query = 'SELECT * FROM events WHERE class_name IS NULL';
+                const params = [];
+
+                if (hasLink && myClasses.length > 0) {
+                    query += ` OR class_name IN (${myClasses.map(() => '?').join(',')})`;
+                    params.push(...myClasses);
+                }
+
+                query += ' ORDER BY created_at DESC LIMIT 20';
+
+                const events = schoolDB.prepare(query).all(...params);
+                console.log(`Escola ${school.name}: ${events.length} eventos encontrados`);
+
+                events.forEach(e => {
+                    e.school_name = school.name;
+                    e.schoolId = school.id;
+                    e.source = 'school_event';
+                    allEvents.push(e);
+                });
+
+            } catch (e) {
+                console.log('Erro na escola', school.id, ':', e.message);
+            }
+        }
+
+        allEvents.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        console.log('Total de eventos retornados:', allEvents.length);
+        res.json(allEvents);
+
+    } catch (e) { console.error(e); res.status(500).json({ error: 'Erro ao buscar eventos' }); }
+});
+
+// 10. SCHOOL: Participantes do Evento
+app.get('/api/school/events/:id/participants', authenticateToken, (req, res) => {
+    const schoolId = req.user.id;
+    const db = getSchoolDB(schoolId);
+    const systemDB = getSystemDB();
+    try {
+        const participants = db.prepare(`
+            SELECT * FROM event_participations WHERE event_id = ?
+        `).all(req.params.id);
+
+        // Enriquecer com dados dos alunos vinculados ao guardian
+        const result = participants.map(p => {
+            let displayStudentName = 'Desconhecido';
+            let displayClassName = '-';
+
+            if (p.guardian_id) {
+                // 1. Buscar nome do Responsável (Fallback)
+                const guardian = systemDB.prepare('SELECT name FROM guardians WHERE id = ?').get(p.guardian_id);
+                const guardianName = guardian ? guardian.name : 'Responsável';
+
+                // 2. Buscar Alunos vinculados a este responsável nesta escola
+                const students = db.prepare(`
+                    SELECT s.name, s.class_name 
+                    FROM students s
+                    JOIN student_guardians sg ON s.id = sg.student_id
+                    WHERE sg.guardian_id = ? AND sg.status = 'active'
+                `).all(p.guardian_id);
+
+                if (students && students.length > 0) {
+                    displayStudentName = students.map(s => s.name).join(', ');
+                    displayClassName = students.map(s => s.class_name).join(', ');
+                } else {
+                    displayStudentName = `${guardianName} (Resp. sem aluno vinculado)`;
+                }
+            }
+
+            return {
+                ...p,
+                student_name: displayStudentName,
+                class_name: displayClassName,
+                confirmed_at: p.created_at
+            };
+        });
+
+        res.json(result);
+    } catch (e) {
+        console.error('Erro ao buscar participantes:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// 11. SCHOOL: Confirmar Participação
+app.post('/api/school/events/participations/:id/confirm', authenticateToken, (req, res) => {
+    const schoolId = req.user.id;
+    const { status } = req.body; // 'confirmed', 'paid'
+    const db = getSchoolDB(schoolId);
+    try {
+        db.prepare('UPDATE event_participations SET status = ?, confirmed_at = CURRENT_TIMESTAMP WHERE id = ?')
+            .run(status, req.params.id);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 12. GUARDIAN: Participar em Evento (SIMPLIFICADO)
+app.post('/api/guardian/events/:id/participate', authenticateGuardian, (req, res) => {
+    try {
+        const guardianId = req.user.id;
+        const eventId = req.params.id;
+        const { schoolId, action } = req.body;
+
+        console.log('[PARTICIPATE] Recebido:', { guardianId, eventId, schoolId, action });
+
+        if (!schoolId) {
+            return res.status(400).json({ error: 'schoolId é obrigatório' });
+        }
+
+        const db = getSchoolDB(schoolId);
+
+        // Recriar tabela sem constraint de student_id
+        try {
+            // Tentar dropar tabela antiga (que tinha student_id NOT NULL)
+            db.exec('DROP TABLE IF EXISTS event_participations_old');
+            db.exec('ALTER TABLE event_participations RENAME TO event_participations_old');
+            db.exec(`
+                CREATE TABLE event_participations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INTEGER NOT NULL,
+                    guardian_id INTEGER,
+                    status TEXT DEFAULT 'interested',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            db.exec('INSERT INTO event_participations (id, event_id, guardian_id, status, created_at) SELECT id, event_id, guardian_id, status, created_at FROM event_participations_old WHERE guardian_id IS NOT NULL');
+            db.exec('DROP TABLE event_participations_old');
+            console.log('[PARTICIPATE] Tabela migrada com sucesso');
+        } catch (e) {
+            // Se falhar, criar nova tabela
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS event_participations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INTEGER NOT NULL,
+                    guardian_id INTEGER,
+                    status TEXT DEFAULT 'interested',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+        }
+
+        // Determinar status
+        let status = 'interested';
+        if (action === 'inform_payment') status = 'paid';
+        if (action === 'confirm_presence') status = 'confirmed';
+
+        // Verificar se já existe participação deste guardian neste evento
+        let existing = null;
+        try {
+            existing = db.prepare('SELECT id FROM event_participations WHERE event_id = ? AND guardian_id = ?').get(eventId, guardianId);
+        } catch (e) {
+            // Se a coluna guardian_id não existir, busca por event_id apenas
+            existing = db.prepare('SELECT id FROM event_participations WHERE event_id = ?').get(eventId);
+        }
+
+        if (existing) {
+            db.prepare('UPDATE event_participations SET status = ? WHERE id = ?').run(status, existing.id);
+        } else {
+            db.prepare('INSERT INTO event_participations (event_id, guardian_id, status) VALUES (?, ?, ?)').run(eventId, guardianId, status);
+        }
+
+        console.log('[PARTICIPATE] Sucesso!');
+        res.json({ success: true, message: 'Participação confirmada!' });
+    } catch (e) {
+        console.error('[PARTICIPATE] Erro:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ==================== SERVIR FRONTEND (PRODUÇÃO) ====================
+// Serve os arquivos estáticos do Admin Panel (Pasta client/dist)
+app.use(express.static(path.join(__dirname, '../client/dist')));
+
+// Qualquer rota que não comece com /api retorna o index.html do React
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: 'Endpoint da API não encontrado' });
+    }
+    // Verifica se o arquivo existe antes de enviar
+    const indexPath = path.join(__dirname, '../client/dist/index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).send('Frontend build not found. Run "npm run build" in client folder.');
+    }
+});
 
 const startServer = async () => {
     // 1. Run Seed if available

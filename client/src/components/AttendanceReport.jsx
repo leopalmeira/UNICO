@@ -1,28 +1,23 @@
 import { useState, useEffect } from 'react';
-import {
-    Calendar, Users, TrendingUp, Clock, Download, CheckCircle,
-    XCircle, AlertCircle, Search, ChevronDown, ChevronUp, Phone
-} from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import api from '../api/axios';
 
 export default function AttendanceReport({ schoolId }) {
-    const [students, setStudents] = useState([]);
+    const [selectedMonth, setSelectedMonth] = useState(new Date());
     const [attendanceData, setAttendanceData] = useState([]);
-    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [students, setStudents] = useState([]);
+    const [selectedStudent, setSelectedStudent] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
-    const [expandedStudent, setExpandedStudent] = useState(null);
-    const [loading, setLoading] = useState(false);
-
-    const months = [
-        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-    ];
+    const [showStudentDetails, setShowStudentDetails] = useState(false);
+    const [selectedStudentData, setSelectedStudentData] = useState(null);
 
     useEffect(() => {
         loadStudents();
+    }, []);
+
+    useEffect(() => {
         loadAttendanceData();
-    }, [selectedMonth, selectedYear]);
+    }, [selectedMonth, selectedStudent]);
 
     const loadStudents = async () => {
         try {
@@ -34,457 +29,492 @@ export default function AttendanceReport({ schoolId }) {
     };
 
     const loadAttendanceData = async () => {
-        setLoading(true);
         try {
-            const startDate = new Date(selectedYear, selectedMonth, 1).toISOString().split('T')[0];
-            const endDate = new Date(selectedYear, selectedMonth + 1, 0).toISOString().split('T')[0];
-
-            console.log('🔄 Carregando presença:', { startDate, endDate });
+            const year = selectedMonth.getFullYear();
+            const month = selectedMonth.getMonth() + 1;
+            const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+            const lastDay = new Date(year, month, 0).getDate();
+            const endDate = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
 
             const res = await api.get(`/school/attendance?startDate=${startDate}&endDate=${endDate}`);
-            const data = res.data || [];
-
-            // DEBUG: Log para ver os dados recebidos
-            console.log('📊 DEBUG attendanceData loaded:', {
-                startDate,
-                endDate,
-                totalRecords: data.length,
-                records: data,
-                sampleRecord: data[0]
-            });
-
-            setAttendanceData(data);
+            // Filtrar apenas entradas (entry/arrival) para evitar duplicidade com saídas
+            const entries = res.data.filter(r => r.type === 'entry' || r.type === 'arrival');
+            setAttendanceData(entries);
         } catch (err) {
-            console.error('❌ Erro ao carregar presença:', err);
-            console.error('Detalhes:', err.response?.data);
-            setAttendanceData([]);
-        } finally {
-            setLoading(false);
+            console.error('Erro ao carregar frequência:', err);
         }
-    };
-
-    const getStudentAttendance = (studentId) => {
-        return attendanceData.filter(a =>
-            a.student_id === studentId &&
-            (a.type === 'entry' || a.type === 'arrival')
-        );
     };
 
     const getDaysInMonth = () => {
-        return new Date(selectedYear, selectedMonth + 1, 0).getDate();
-    };
+        const year = selectedMonth.getFullYear();
+        const month = selectedMonth.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const days = [];
 
-    const getAttendanceForDay = (studentId, day) => {
-        // Data alvo do calendário
-        const targetDate = new Date(selectedYear, selectedMonth, day);
-
-        const found = attendanceData.find(a => {
-            // Timestamp do banco (UTC) convertido para objeto Date (Local)
-            const attendanceDate = new Date(a.timestamp);
-
-            // Comparar ano, mês e dia locais
-            const matches = a.student_id === studentId &&
-                attendanceDate.getDate() === day &&
-                attendanceDate.getMonth() === selectedMonth &&
-                attendanceDate.getFullYear() === selectedYear;
-
-            return matches;
-        });
-
-        return found;
-    };
-
-    const calculateStudentStats = (studentId) => {
-        const studentAttendance = getStudentAttendance(studentId);
-        const daysInMonth = getDaysInMonth();
-        const presences = studentAttendance.length;
-        const absences = daysInMonth - presences;
-        const rate = daysInMonth > 0 ? ((presences / daysInMonth) * 100).toFixed(1) : 0;
-
-        // Calcular horário médio de chegada
-        let avgTime = '--:--';
-        if (presences > 0) {
-            const totalMinutes = studentAttendance.reduce((acc, a) => {
-                const date = new Date(a.timestamp);
-                return acc + (date.getHours() * 60 + date.getMinutes());
-            }, 0);
-            const avgMinutes = Math.floor(totalMinutes / presences);
-            const hours = Math.floor(avgMinutes / 60);
-            const mins = avgMinutes % 60;
-            avgTime = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+        // Dias vazios no início
+        for (let i = 0; i < firstDay.getDay(); i++) {
+            days.push(null);
         }
 
-        return { presences, absences, rate, avgTime };
+        // Dias do mês
+        for (let day = 1; day <= lastDay.getDate(); day++) {
+            days.push(new Date(year, month, day));
+        }
+
+        return days;
     };
 
-    const filteredStudents = students.filter(student =>
-        student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        student.class_name?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const hasAttendance = (date) => {
+        if (!date) return false;
 
-    const toggleStudent = (studentId) => {
-        setExpandedStudent(expandedStudent === studentId ? null : studentId);
+        const dateStr = date.toISOString().split('T')[0];
+        return attendanceData.some(record => {
+            const recordDate = new Date(record.timestamp).toISOString().split('T')[0];
+            return recordDate === dateStr &&
+                (selectedStudent === 'all' || record.student_id === parseInt(selectedStudent));
+        });
     };
+
+    const previousMonth = () => {
+        setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() - 1));
+    };
+
+    const nextMonth = () => {
+        setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1));
+    };
+
+    const handleStudentClick = (studentId) => {
+        if (studentId === 'all') {
+            setShowStudentDetails(false);
+            setSelectedStudentData(null);
+            return;
+        }
+
+        const student = students.find(s => s.id === parseInt(studentId));
+        if (!student) return;
+
+        // Calcular estatísticas do aluno no mês atual
+        const year = selectedMonth.getFullYear();
+        const month = selectedMonth.getMonth();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        const studentRecords = attendanceData.filter(record =>
+            record.student_id === parseInt(studentId)
+        );
+
+        const daysPresent = new Set(
+            studentRecords.map(record =>
+                new Date(record.timestamp).toISOString().split('T')[0]
+            )
+        ).size;
+
+        const attendanceRate = ((daysPresent / daysInMonth) * 100).toFixed(1);
+
+        setSelectedStudentData({
+            ...student,
+            daysPresent,
+            daysInMonth,
+            attendanceRate,
+            records: studentRecords
+        });
+        setShowStudentDetails(true);
+    };
+
+    const exportReport = () => {
+        const monthName = selectedMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+        const days = getDaysInMonth().filter(d => d !== null);
+
+        let csvContent = `Relatório de Frequência - Alunos - ${monthName}\n\n`;
+        csvContent += 'Aluno,Turma,';
+        csvContent += days.map(d => d.getDate()).join(',') + '\n';
+
+        const studentsToExport = selectedStudent === 'all'
+            ? students
+            : students.filter(s => s.id === parseInt(selectedStudent));
+
+        studentsToExport.forEach(student => {
+            csvContent += `${student.name},${student.class_name || 'N/A'},`;
+            csvContent += days.map(day => hasAttendance(day) ? 'P' : 'F').join(',') + '\n';
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `frequencia_alunos_${selectedMonth.getFullYear()}-${selectedMonth.getMonth() + 1}.csv`;
+        link.click();
+    };
+
+    const days = getDaysInMonth();
+    const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+    // Filtrar alunos
+    const filteredStudents = students.filter(std => {
+        if (!searchTerm) return true;
+
+        const search = searchTerm.toLowerCase();
+        const name = std.name?.toLowerCase() || '';
+        const className = std.class_name?.toLowerCase() || '';
+
+        return name.includes(search) || className.includes(search);
+    });
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {/* Header */}
-            <div className="glass-panel" style={{ padding: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <Calendar size={32} style={{ color: 'var(--primary)' }} />
-                        <div>
-                            <h2 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '0.25rem' }}>
-                                📊 Relatório de Frequência
-                            </h2>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                                Busque e visualize a presença individual dos alunos
-                            </p>
-                        </div>
-                    </div>
+        <div className="fade-in">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+                <h1 style={{ fontSize: '2rem', fontWeight: '700' }}>
+                    📅 Frequência de Alunos
+                </h1>
 
-                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                        <select
-                            className="input-field"
-                            value={selectedMonth}
-                            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                            style={{ padding: '0.75rem', minWidth: '150px' }}
-                        >
-                            {months.map((month, index) => (
-                                <option key={index} value={index}>{month}</option>
-                            ))}
-                        </select>
-
-                        <select
-                            className="input-field"
-                            value={selectedYear}
-                            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                            style={{ padding: '0.75rem', minWidth: '120px' }}
-                        >
-                            {[2024, 2025, 2026].map(year => (
-                                <option key={year} value={year}>{year}</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            {/* Search Bar */}
-            <div className="glass-panel" style={{ padding: '1.5rem' }}>
-                <div style={{ position: 'relative' }}>
-                    <Search
-                        size={20}
-                        style={{
-                            position: 'absolute',
-                            left: '1rem',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            color: 'var(--text-secondary)'
-                        }}
-                    />
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Campo de Busca */}
                     <input
                         type="text"
                         className="input-field"
-                        placeholder="Buscar aluno por nome ou turma..."
+                        placeholder="🔍 Buscar por nome ou turma..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         style={{
-                            width: '100%',
-                            padding: '1rem 1rem 1rem 3rem',
-                            fontSize: '1rem'
+                            padding: '0.75rem',
+                            minWidth: '300px',
+                            background: 'rgba(15, 23, 42, 0.6)',
+                            border: '2px solid var(--glass-border)',
+                            borderRadius: 'var(--radius)',
+                            color: 'var(--text-primary)'
                         }}
                     />
+
+                    {/* Dropdown de Seleção */}
+                    <select
+                        className="input-field"
+                        value={selectedStudent}
+                        onChange={(e) => {
+                            setSelectedStudent(e.target.value);
+                            handleStudentClick(e.target.value);
+                        }}
+                        style={{ padding: '0.75rem', minWidth: '200px' }}
+                    >
+                        <option value="all">Todos os Alunos</option>
+                        {filteredStudents.map(std => (
+                            <option key={std.id} value={std.id}>
+                                {std.name} - {std.class_name}
+                            </option>
+                        ))}
+                    </select>
+
+                    <button
+                        className="btn"
+                        onClick={exportReport}
+                        style={{ background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                        <Download size={18} />
+                        Exportar
+                    </button>
                 </div>
-                <p style={{
-                    marginTop: '0.75rem',
-                    fontSize: '0.875rem',
-                    color: 'var(--text-secondary)'
-                }}>
-                    {filteredStudents.length} aluno(s) encontrado(s)
-                </p>
             </div>
 
-            {/* Students List */}
-            {loading ? (
-                <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center' }}>
-                    <div className="loading-spinner" style={{ margin: '0 auto 1rem' }}></div>
-                    <p style={{ color: 'var(--text-secondary)' }}>Carregando dados...</p>
+            {/* Indicador de Resultados da Busca */}
+            {searchTerm && (
+                <div style={{
+                    marginBottom: '1rem',
+                    padding: '0.75rem 1rem',
+                    background: 'rgba(59, 130, 246, 0.1)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                }}>
+                    <span style={{ fontSize: '0.9rem' }}>
+                        🔍 <strong>{filteredStudents.length}</strong> aluno(s) encontrado(s) para "{searchTerm}"
+                    </span>
+                    <button
+                        onClick={() => setSearchTerm('')}
+                        style={{
+                            marginLeft: 'auto',
+                            background: 'rgba(255,255,255,0.1)',
+                            border: 'none',
+                            padding: '0.25rem 0.75rem',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '0.875rem',
+                            color: 'var(--text-primary)'
+                        }}
+                    >
+                        Limpar
+                    </button>
                 </div>
-            ) : filteredStudents.length === 0 ? (
-                <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center' }}>
-                    <Users size={64} style={{ margin: '0 auto 1rem', opacity: 0.5, color: 'var(--text-secondary)' }} />
-                    <p style={{ color: 'var(--text-secondary)' }}>
-                        {searchTerm ? 'Nenhum aluno encontrado com esse nome' : 'Nenhum aluno cadastrado'}
-                    </p>
-                </div>
-            ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {filteredStudents.map(student => {
-                        const stats = calculateStudentStats(student.id);
-                        const isExpanded = expandedStudent === student.id;
-                        const studentAttendance = getStudentAttendance(student.id);
+            )}
 
-                        return (
-                            <div key={student.id} className="glass-panel" style={{ overflow: 'hidden' }}>
-                                {/* Student Header - Clickable */}
-                                <div
-                                    onClick={() => toggleStudent(student.id)}
+            {/* Card de Detalhes do Aluno */}
+            {showStudentDetails && selectedStudentData && (
+                <div className="glass-panel" style={{
+                    padding: '2rem',
+                    marginBottom: '1.5rem',
+                    background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(16, 185, 129, 0.1))',
+                    border: '2px solid rgba(59, 130, 246, 0.3)'
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                        <h3 style={{ fontSize: '1.5rem', fontWeight: '700', margin: 0 }}>
+                            👤 Detalhes do Aluno
+                        </h3>
+                        <button
+                            onClick={() => {
+                                setShowStudentDetails(false);
+                                setSelectedStudent('all');
+                            }}
+                            style={{
+                                background: 'rgba(255,255,255,0.1)',
+                                border: 'none',
+                                padding: '0.5rem 1rem',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontSize: '0.875rem',
+                                color: 'var(--text-primary)'
+                            }}
+                        >
+                            ✕ Fechar
+                        </button>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2rem', alignItems: 'start' }}>
+                        {/* Foto do Aluno */}
+                        <div style={{ textAlign: 'center' }}>
+                            {selectedStudentData.photo_url ? (
+                                <img
+                                    src={selectedStudentData.photo_url}
+                                    alt={selectedStudentData.name}
                                     style={{
-                                        padding: '1.5rem',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        transition: 'background 0.2s',
-                                        background: isExpanded ? 'rgba(255,255,255,0.05)' : 'transparent'
+                                        width: '150px',
+                                        height: '150px',
+                                        borderRadius: '50%',
+                                        objectFit: 'cover',
+                                        border: '4px solid var(--accent-primary)',
+                                        boxShadow: '0 8px 16px rgba(0,0,0,0.3)'
                                     }}
-                                >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flex: 1 }}>
-                                        {/* Avatar */}
-                                        <div style={{
-                                            width: '60px',
-                                            height: '60px',
-                                            borderRadius: '50%',
-                                            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            color: 'white',
-                                            fontSize: '1.5rem',
-                                            fontWeight: '700'
-                                        }}>
-                                            {student.name.charAt(0)}
-                                        </div>
+                                />
+                            ) : (
+                                <div style={{
+                                    width: '150px',
+                                    height: '150px',
+                                    borderRadius: '50%',
+                                    background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '4rem',
+                                    fontWeight: '700',
+                                    color: 'white',
+                                    border: '4px solid var(--accent-primary)',
+                                    boxShadow: '0 8px 16px rgba(0,0,0,0.3)'
+                                }}>
+                                    {selectedStudentData.name?.charAt(0)}
+                                </div>
+                            )}
+                        </div>
 
-                                        {/* Student Info */}
-                                        <div style={{ flex: 1 }}>
-                                            <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.25rem' }}>
-                                                {student.name}
-                                            </h3>
-                                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                                                {student.class_name || 'Sem turma'} • {student.phone || 'Sem telefone'}
-                                            </p>
-                                        </div>
+                        {/* Informações do Aluno */}
+                        <div>
+                            <h2 style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '0.5rem' }}>
+                                {selectedStudentData.name}
+                            </h2>
 
-                                        {/* Quick Stats */}
-                                        <div style={{ display: 'flex', gap: '2rem', marginRight: '1rem' }}>
-                                            <div style={{ textAlign: 'center' }}>
-                                                <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#10b981' }}>
-                                                    {stats.presences}
-                                                </div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                                    Presenças
-                                                </div>
-                                            </div>
-                                            <div style={{ textAlign: 'center' }}>
-                                                <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#ef4444' }}>
-                                                    {stats.absences}
-                                                </div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                                    Faltas
-                                                </div>
-                                            </div>
-                                            <div style={{ textAlign: 'center' }}>
-                                                <div style={{
-                                                    fontSize: '1.5rem',
-                                                    fontWeight: '700',
-                                                    color: stats.rate >= 75 ? '#10b981' : stats.rate >= 50 ? '#f59e0b' : '#ef4444'
-                                                }}>
-                                                    {stats.rate}%
-                                                </div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                                    Frequência
-                                                </div>
-                                            </div>
-                                        </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginTop: '1.5rem' }}>
+                                {/* Turma */}
+                                <div style={{
+                                    padding: '1rem',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(255,255,255,0.1)'
+                                }}>
+                                    <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                                        🏫 Turma
                                     </div>
-
-                                    {/* Expand Icon */}
-                                    {isExpanded ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
+                                    <div style={{ fontSize: '1.125rem', fontWeight: '600' }}>
+                                        {selectedStudentData.class_name || 'Não informada'}
+                                    </div>
                                 </div>
 
-                                {/* Expanded Content */}
-                                {isExpanded && (
+                                {/* Idade */}
+                                {selectedStudentData.age && (
                                     <div style={{
-                                        padding: '0 1.5rem 1.5rem 1.5rem',
-                                        borderTop: '1px solid rgba(255,255,255,0.1)',
-                                        animation: 'slideDown 0.3s ease-out'
+                                        padding: '1rem',
+                                        background: 'rgba(255,255,255,0.05)',
+                                        borderRadius: '12px',
+                                        border: '1px solid rgba(255,255,255,0.1)'
                                     }}>
-                                        {/* Additional Stats */}
-                                        <div style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-                                            gap: '1rem',
-                                            marginTop: '1.5rem',
-                                            marginBottom: '1.5rem'
-                                        }}>
-                                            <div style={{
-                                                padding: '1rem',
-                                                background: 'rgba(139, 92, 246, 0.1)',
-                                                borderRadius: '8px',
-                                                textAlign: 'center'
-                                            }}>
-                                                <Clock size={24} style={{ color: '#8b5cf6', margin: '0 auto 0.5rem' }} />
-                                                <div style={{ fontSize: '1.25rem', fontWeight: '700', color: '#8b5cf6' }}>
-                                                    {stats.avgTime}
-                                                </div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                                    Horário Médio
-                                                </div>
-                                            </div>
-
-                                            <div style={{
-                                                padding: '1rem',
-                                                background: 'rgba(59, 130, 246, 0.1)',
-                                                borderRadius: '8px',
-                                                textAlign: 'center'
-                                            }}>
-                                                <TrendingUp size={24} style={{ color: '#3b82f6', margin: '0 auto 0.5rem' }} />
-                                                <div style={{ fontSize: '1.25rem', fontWeight: '700', color: '#3b82f6' }}>
-                                                    {studentAttendance.length > 0 ? 'Ativo' : 'Inativo'}
-                                                </div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                                    Status
-                                                </div>
-                                            </div>
+                                        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                                            🎂 Idade
                                         </div>
-
-                                        {/* Monthly Calendar */}
-                                        <h4 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem' }}>
-                                            📅 Cronograma de {months[selectedMonth]}
-                                        </h4>
-                                        <div style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: 'repeat(7, 1fr)',
-                                            gap: '0.5rem',
-                                            marginBottom: '1.5rem'
-                                        }}>
-                                            {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((day, i) => (
-                                                <div key={i} style={{
-                                                    textAlign: 'center',
-                                                    fontSize: '0.75rem',
-                                                    fontWeight: '600',
-                                                    color: 'var(--text-secondary)',
-                                                    padding: '0.5rem'
-                                                }}>
-                                                    {day}
-                                                </div>
-                                            ))}
-
-                                            {/* Empty cells for first week */}
-                                            {Array.from({ length: new Date(selectedYear, selectedMonth, 1).getDay() }).map((_, i) => (
-                                                <div key={`empty-${i}`} />
-                                            ))}
-
-                                            {/* Days of month */}
-                                            {Array.from({ length: getDaysInMonth() }, (_, i) => i + 1).map(day => {
-                                                const attendance = getAttendanceForDay(student.id, day);
-                                                const dayOfWeek = new Date(selectedYear, selectedMonth, day).getDay();
-                                                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                                                const isToday = day === new Date().getDate() &&
-                                                    selectedMonth === new Date().getMonth() &&
-                                                    selectedYear === new Date().getFullYear();
-
-                                                return (
-                                                    <div
-                                                        key={day}
-                                                        style={{
-                                                            padding: '0.75rem',
-                                                            borderRadius: '8px',
-                                                            textAlign: 'center',
-                                                            fontSize: '0.875rem',
-                                                            fontWeight: '600',
-                                                            background: isWeekend
-                                                                ? 'rgba(255,255,255,0.02)'
-                                                                : attendance
-                                                                    ? 'rgba(16, 185, 129, 0.2)'
-                                                                    : 'rgba(239, 68, 68, 0.1)',
-                                                            border: isToday ? '2px solid var(--primary)' : 'none',
-                                                            color: isWeekend
-                                                                ? 'var(--text-secondary)'
-                                                                : attendance
-                                                                    ? '#10b981'
-                                                                    : '#ef4444',
-                                                            cursor: attendance ? 'pointer' : 'default'
-                                                        }}
-                                                        title={attendance ? `Chegou às ${new Date(attendance.timestamp).toLocaleTimeString('pt-BR')}` : isWeekend ? 'Fim de semana' : 'Falta'}
-                                                    >
-                                                        {day}
-                                                    </div>
-                                                );
-                                            })}
+                                        <div style={{ fontSize: '1.125rem', fontWeight: '600' }}>
+                                            {selectedStudentData.age} anos
                                         </div>
-
-                                        {/* Recent Arrivals */}
-                                        {studentAttendance.length > 0 && (
-                                            <>
-                                                <h4 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem' }}>
-                                                    🕐 Últimas Chegadas
-                                                </h4>
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                                    {studentAttendance.slice(0, 5).map((entry, idx) => {
-                                                        const date = new Date(entry.timestamp);
-                                                        return (
-                                                            <div
-                                                                key={idx}
-                                                                style={{
-                                                                    padding: '0.75rem 1rem',
-                                                                    background: 'rgba(16, 185, 129, 0.1)',
-                                                                    borderRadius: '8px',
-                                                                    display: 'flex',
-                                                                    justifyContent: 'space-between',
-                                                                    alignItems: 'center'
-                                                                }}
-                                                            >
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                                    <CheckCircle size={16} style={{ color: '#10b981' }} />
-                                                                    <span style={{ fontSize: '0.9rem' }}>
-                                                                        {date.toLocaleDateString('pt-BR')}
-                                                                    </span>
-                                                                </div>
-                                                                <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#10b981' }}>
-                                                                    {date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                                                                </span>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </>
-                                        )}
                                     </div>
                                 )}
+
+                                {/* Responsável */}
+                                {selectedStudentData.parent_email && (
+                                    <div style={{
+                                        padding: '1rem',
+                                        background: 'rgba(255,255,255,0.05)',
+                                        borderRadius: '12px',
+                                        border: '1px solid rgba(255,255,255,0.1)'
+                                    }}>
+                                        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                                            📧 Email do Responsável
+                                        </div>
+                                        <div style={{ fontSize: '1.125rem', fontWeight: '600', wordBreak: 'break-all' }}>
+                                            {selectedStudentData.parent_email}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Estatísticas de Frequência */}
+                            <div style={{
+                                marginTop: '1.5rem',
+                                padding: '1.5rem',
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                borderRadius: '12px',
+                                border: '2px solid rgba(16, 185, 129, 0.3)'
+                            }}>
+                                <h4 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem' }}>
+                                    📊 Frequência em {selectedMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '2.5rem', fontWeight: '700', color: '#10b981' }}>
+                                            {selectedStudentData.daysPresent}
+                                        </div>
+                                        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                                            Dias Presentes
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '2.5rem', fontWeight: '700', color: '#ef4444' }}>
+                                            {selectedStudentData.daysInMonth - selectedStudentData.daysPresent}
+                                        </div>
+                                        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                                            Dias Ausentes
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{
+                                            fontSize: '2.5rem',
+                                            fontWeight: '700',
+                                            color: selectedStudentData.attendanceRate >= 90 ? '#10b981' :
+                                                selectedStudentData.attendanceRate >= 75 ? '#f59e0b' : '#ef4444'
+                                        }}>
+                                            {selectedStudentData.attendanceRate}%
+                                        </div>
+                                        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                                            Taxa de Presença
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="glass-panel" style={{ padding: '2rem' }}>
+                {/* Month Navigator */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                    <button
+                        onClick={previousMonth}
+                        className="btn"
+                        style={{ background: 'rgba(255,255,255,0.1)', padding: '0.5rem' }}
+                    >
+                        <ChevronLeft size={24} />
+                    </button>
+
+                    <h2 style={{ fontSize: '1.5rem', fontWeight: '700', textTransform: 'capitalize' }}>
+                        {selectedMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                    </h2>
+
+                    <button
+                        onClick={nextMonth}
+                        className="btn"
+                        style={{ background: 'rgba(255,255,255,0.1)', padding: '0.5rem' }}
+                    >
+                        <ChevronRight size={24} />
+                    </button>
+                </div>
+
+                {/* Calendar Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.5rem' }}>
+                    {/* Week day headers */}
+                    {weekDays.map(day => (
+                        <div
+                            key={day}
+                            style={{
+                                padding: '0.75rem',
+                                textAlign: 'center',
+                                fontWeight: '600',
+                                color: 'var(--text-secondary)',
+                                fontSize: '0.875rem'
+                            }}
+                        >
+                            {day}
+                        </div>
+                    ))}
+
+                    {/* Calendar days */}
+                    {days.map((date, index) => {
+                        if (!date) {
+                            return <div key={`empty-${index}`} />;
+                        }
+
+                        const isToday = date.toDateString() === new Date().toDateString();
+                        const hasRecord = hasAttendance(date);
+                        const isFuture = date > new Date();
+
+                        return (
+                            <div
+                                key={date.toISOString()}
+                                style={{
+                                    padding: '1rem',
+                                    background: hasRecord
+                                        ? 'rgba(16, 185, 129, 0.2)'
+                                        : isFuture
+                                            ? 'rgba(255,255,255,0.02)'
+                                            : 'rgba(239, 68, 68, 0.1)',
+                                    border: isToday ? '2px solid var(--accent-primary)' : '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '8px',
+                                    textAlign: 'center',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.3s',
+                                    opacity: isFuture ? 0.5 : 1
+                                }}
+                            >
+                                <div style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.25rem' }}>
+                                    {date.getDate()}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                    {hasRecord ? '✓ Presente' : isFuture ? '-' : '✗ Ausente'}
+                                </div>
                             </div>
                         );
                     })}
                 </div>
-            )}
 
-            <style>{`
-                .loading-spinner {
-                    width: 40px;
-                    height: 40px;
-                    border: 4px solid rgba(255, 255, 255, 0.1);
-                    border-top: 4px solid var(--primary);
-                    border-radius: 50%;
-                    animation: spin 1s linear infinite;
-                }
-
-                @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                }
-
-                @keyframes slideDown {
-                    from {
-                        opacity: 0;
-                        transform: translateY(-10px);
-                    }
-                    to {
-                        opacity: 1;
-                        transform: translateY(0);
-                    }
-                }
-            `}</style>
+                {/* Legend */}
+                <div style={{ display: 'flex', gap: '2rem', marginTop: '2rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div style={{ width: '20px', height: '20px', background: 'rgba(16, 185, 129, 0.2)', border: '1px solid rgba(16, 185, 129, 0.5)', borderRadius: '4px' }} />
+                        <span style={{ fontSize: '0.875rem' }}>Presente</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div style={{ width: '20px', height: '20px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.5)', borderRadius: '4px' }} />
+                        <span style={{ fontSize: '0.875rem' }}>Ausente</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div style={{ width: '20px', height: '20px', border: '2px solid var(--accent-primary)', borderRadius: '4px' }} />
+                        <span style={{ fontSize: '0.875rem' }}>Hoje</span>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

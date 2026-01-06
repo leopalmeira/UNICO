@@ -17,8 +17,8 @@ export default function GatewayMonitor() {
     const lastRecognitionTime = useRef({});
 
     // Configuração da escola (pode vir de localStorage ou config)
-    const schoolId = localStorage.getItem('gateway_school_id') || 1;
-    const schoolName = localStorage.getItem('gateway_school_name') || 'Escola';
+    const schoolId = localStorage.getItem('gateway_school_id') || 14;
+    const schoolName = localStorage.getItem('gateway_school_name') || 'Escola 123';
 
     useEffect(() => {
         loadModels();

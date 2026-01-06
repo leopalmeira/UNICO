@@ -464,6 +464,53 @@ function getSchoolDB(schoolId) {
 
     CREATE INDEX IF NOT EXISTS idx_access_logs_notified
     ON access_logs(notified_guardian);
+
+    -- Tabela de Mensagens (Chat Responsável <-> Escola)
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sender_type TEXT CHECK( sender_type IN ('school','guardian') ) NOT NULL,
+      sender_id INTEGER NOT NULL,
+      student_id INTEGER NOT NULL,
+      content TEXT,
+      message_type TEXT DEFAULT 'text', -- text, audio, image, file
+      file_url TEXT,
+      file_name TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      read_at DATETIME,
+      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_messages_student
+    ON messages(student_id);
+
+    CREATE INDEX IF NOT EXISTS idx_messages_created_at
+    ON messages(created_at);
+
+    -- Tabela de Eventos e Avisos
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT,
+      event_date DATETIME, -- Data do evento
+      cost REAL, -- Custo
+      type TEXT DEFAULT 'event', -- 'event' ou 'notice'
+      class_name TEXT, -- Turma específica ou NULL para todas
+      pix_key TEXT, -- Chave Pix para pagamento
+      payment_deadline DATE, -- Data limite para pagamento
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Participação em Eventos (Confirmação/Pagamento)
+    CREATE TABLE IF NOT EXISTS event_participations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL,
+      student_id INTEGER NOT NULL,
+      status TEXT DEFAULT 'pending', -- pending, confirmed, paid
+      payment_proof_url TEXT,
+      confirmed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+    );
   `);
 
   return db;
