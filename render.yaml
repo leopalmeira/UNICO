@@ -3,9 +3,8 @@ services:
     name: edufocus-system
     env: node
     plan: free
-    rootDir: server
-    buildCommand: npm install && cd ../client && npm install && npm run build
-    startCommand: node server.js
+    buildCommand: cd server && npm install && cd ../client && npm install && npm run build
+    startCommand: node server/server.js
     envVars:
       - key: NODE_ENV
         value: production
