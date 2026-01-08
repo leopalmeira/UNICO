@@ -42,7 +42,7 @@ export default function InspectorDashboard() {
             if (Array.isArray(res.data)) {
                 const currentPickups = res.data.filter(p => p.status !== 'completed');
                 const sortedPickups = currentPickups.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                const completedPickups = res.data.filter(p => p.status === 'completed').slice(0, 10);
+                const completedPickups = res.data.filter(p => p.status === 'completed').slice(0, 50);
 
                 if (sortedPickups.length > lastCountRef.current) {
                     playChime();
@@ -548,8 +548,9 @@ export default function InspectorDashboard() {
                                             }}>
                                                 <CheckCircle2 size={12} /> Entregue
                                             </div>
-                                            <div style={{ color: '#64748b', fontSize: '0.7rem', marginTop: '0.25rem' }}>
-                                                {new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            <div style={{ color: '#64748b', fontSize: '0.7rem', marginTop: '0.25rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                                <span style={{ fontWeight: '700', color: '#64748b' }}>{new Date(p.timestamp).toLocaleDateString('pt-BR')}</span>
+                                                <span>{new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                             </div>
                                         </div>
                                     </div>

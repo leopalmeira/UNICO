@@ -210,6 +210,18 @@ def init_school_db(conn):
         teacher_id INTEGER,
         class_id INTEGER
     )''')
+
+    cur.execute('''
+    CREATE TABLE IF NOT EXISTS teacher_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        school_id INTEGER,
+        teacher_id INTEGER,
+        sender_type TEXT,
+        message TEXT,
+        read INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )''')
+
     
     cur.execute('''
     CREATE TABLE IF NOT EXISTS student_guardians (

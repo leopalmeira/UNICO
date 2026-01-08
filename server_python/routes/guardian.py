@@ -370,7 +370,8 @@ def events_stream():
         while True:
             try:
                 # Buscar eventos atualizados
-                sys_db = get_system_db()
+                sys_db = sqlite3.connect(SYSTEM_DB_PATH)
+                sys_db.row_factory = sqlite3.Row
                 schools = sys_db.execute('SELECT id FROM schools').fetchall()
                 
                 all_schools = set()
@@ -400,6 +401,26 @@ def events_stream():
                     except:
                         continue
                 
+                # Check Notifications
+                for school_id in all_schools:
+                    try:
+                        school_db = get_school_db(school_id)
+                        notifs = school_db.execute('''
+                            SELECT al.id, al.student_id, s.name as student_name, al.event_type 
+                            FROM access_logs al
+                            JOIN students s ON al.student_id = s.id
+                            JOIN student_guardians sg ON s.id = sg.student_id
+                            WHERE sg.guardian_id = ? AND al.notified_guardian = 0
+                        ''', (guardian_id,)).fetchall()
+                        if notifs:
+                            ids_to_update = [str(n['id']) for n in notifs]
+                            school_db.execute(f"UPDATE access_logs SET notified_guardian = 1 WHERE id IN ({','.join(ids_to_update)})")
+                            school_db.commit()
+                            for n in notifs:
+                                yield f"data: {json.dumps({'type': 'notification', 'data': dict(n)})}\n\n"
+                        school_db.close()
+                    except: pass
+
                 # Buscar eventos
                 all_events = []
                 for school_id in all_schools:
@@ -806,6 +827,9 @@ def get_chat_messages(student_id):
         ''', (student_id, school_id))
         
         msgs = [dict(m) for m in cur.fetchall()]
+        
+
+
         return jsonify(msgs)
     except Exception as e:
         print(f"Erro chat GET: {e}")
@@ -872,4 +896,6 @@ def send_chat_message(student_id):
         return jsonify({'error': str(e)}), 500
     finally:
         if school_db: school_db.close()
+
+
 

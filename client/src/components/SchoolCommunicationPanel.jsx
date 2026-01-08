@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import api from '../api/axios';
 import { Send, Paperclip, MessageCircle, Users, Bell, X, Calendar, DollarSign, CheckCircle, XCircle, CreditCard, Eye } from 'lucide-react';
 
@@ -345,12 +345,44 @@ export default function SchoolCommunicationPanel({ schoolId, initialTab = 'event
                                         <h3 style={{ fontWeight: '600' }}>{isBroadcast ? `Transmissão: ${selectedClass.name}` : selectedStudent.name}</h3>
                                     </div>
                                     <div id="school-chat-container" style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: '#0f172a' }}>
-                                        {messages.map((m, i) => (
-                                            <div key={i} style={{ alignSelf: m.sender_type === 'school' ? 'flex-end' : 'flex-start', maxWidth: '70%', padding: '10px', borderRadius: '12px', background: m.sender_type === 'school' ? '#4f46e5' : '#334155', color: '#fff' }}>
-                                                {m.content}
-                                                {m.file_url && <div style={{ fontSize: '12px', marginTop: '5px', textDecoration: 'underline' }}>Anexo: {m.file_name}</div>}
-                                            </div>
-                                        ))}
+                                        {messages.map((m, i) => {
+                                            const currentDate = m.created_at ? new Date((m.created_at || '').replace(' ', 'T')) : new Date();
+                                            const prevDate = i > 0 && messages[i - 1].created_at ? new Date((messages[i - 1].created_at || '').replace(' ', 'T')) : null;
+                                            const showDate = i === 0 || (currentDate && prevDate && currentDate.toDateString() !== prevDate.toDateString());
+
+                                            let dateLabel = currentDate.toLocaleDateString('pt-BR');
+                                            const today = new Date();
+                                            if (currentDate.toDateString() === today.toDateString()) dateLabel = 'Hoje';
+
+                                            return (
+                                                <Fragment key={i}>
+                                                    {showDate && (
+                                                        <div style={{ textAlign: 'center', margin: '15px 0 5px', fontSize: '11px', color: '#94a3b8', background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: '12px', alignSelf: 'center', width: 'fit-content' }}>
+                                                            {dateLabel}
+                                                        </div>
+                                                    )}
+                                                    <div style={{
+                                                        alignSelf: m.sender_type === 'school' ? 'flex-end' : 'flex-start',
+                                                        maxWidth: '75%',
+                                                        padding: '8px 12px',
+                                                        borderRadius: '12px',
+                                                        background: m.sender_type === 'school' ? '#6366f1' : '#334155',
+                                                        color: '#fff',
+                                                        position: 'relative',
+                                                        marginBottom: '4px',
+                                                        wordWrap: 'break-word',
+                                                        wordBreak: 'break-word',
+                                                        overflowWrap: 'anywhere'
+                                                    }}>
+                                                        <div style={{ marginBottom: '2px', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>{m.content}</div>
+                                                        {m.file_url && <div style={{ fontSize: '12px', margin: '5px 0', textDecoration: 'underline' }}>Anexo: {m.file_name}</div>}
+                                                        <div style={{ fontSize: '10px', opacity: 0.8, textAlign: 'right', display: 'block', marginTop: '2px' }}>
+                                                            {currentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </div>
+                                                    </div>
+                                                </Fragment>
+                                            );
+                                        })}
                                     </div>
                                     <div style={{ padding: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', display: 'flex', gap: '10px' }}>
                                         <input type="file" ref={uploadRef} style={{ display: 'none' }} onChange={handleFileUpload} />

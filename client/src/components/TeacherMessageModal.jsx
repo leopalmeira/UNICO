@@ -1,16 +1,38 @@
-import React, { useState } from 'react';
-import { X, Send, MessageSquare } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Send, MessageSquare, CheckCircle } from 'lucide-react';
 import api from '../api/axios';
 
 const TeacherMessageModal = ({ teacher, schoolId, onClose }) => {
+    const [messages, setMessages] = useState([]);
     const [message, setMessage] = useState('');
     const [sending, setSending] = useState(false);
+    const messagesEndRef = useRef(null);
+
+    const loadMessages = async () => {
+        try {
+            const res = await api.get(`/messages/school-teacher-chat?teacher_id=${teacher.id}`);
+            setMessages(res.data || []);
+        } catch (error) {
+            console.error("Error loading chat", error);
+        }
+    };
+
+    useEffect(() => {
+        loadMessages();
+        const interval = setInterval(loadMessages, 5000); // Polling for new messages
+        return () => clearInterval(interval);
+    }, [teacher.id]);
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
 
     const handleSend = async () => {
-        if (!message.trim()) {
-            alert('Por favor, digite uma mensagem');
-            return;
-        }
+        if (!message.trim()) return;
 
         try {
             setSending(true);
@@ -22,9 +44,8 @@ const TeacherMessageModal = ({ teacher, schoolId, onClose }) => {
                 message: message.trim()
             });
 
-            alert('✅ Mensagem enviada com sucesso!');
             setMessage('');
-            onClose();
+            loadMessages();
         } catch (error) {
             console.error('Erro ao enviar mensagem:', error);
             alert('❌ Erro ao enviar mensagem. Tente novamente.');
@@ -49,14 +70,17 @@ const TeacherMessageModal = ({ teacher, schoolId, onClose }) => {
             <div className="glass-panel" style={{
                 width: '90%',
                 maxWidth: '600px',
+                height: '80vh',
+                display: 'flex',
+                flexDirection: 'column',
                 padding: '2rem',
                 borderRadius: '16px'
             }}>
                 {/* HEADER */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1rem' }}>
                     <h3 style={{ fontSize: '1.25rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <MessageSquare size={24} />
-                        Enviar Mensagem
+                        Chat com {teacher.name.split(' ')[0]}
                     </h3>
                     <button
                         onClick={onClose}
@@ -66,133 +90,108 @@ const TeacherMessageModal = ({ teacher, schoolId, onClose }) => {
                     </button>
                 </div>
 
-                {/* DESTINATÁRIO */}
+                {/* CHAT AREA */}
                 <div style={{
-                    padding: '1rem',
-                    background: 'rgba(99, 102, 241, 0.1)',
-                    border: '1px solid rgba(99, 102, 241, 0.3)',
-                    borderRadius: '12px',
-                    marginBottom: '1.5rem'
+                    flex: 1,
+                    overflowY: 'auto',
+                    marginBottom: '1rem',
+                    paddingRight: '0.5rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1rem'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{
-                            width: '50px',
-                            height: '50px',
-                            borderRadius: '50%',
-                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: 'white',
-                            fontSize: '1.25rem',
-                            fontWeight: '700'
-                        }}>
-                            {teacher.name?.charAt(0)}
+                    {messages.length === 0 ? (
+                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)', marginTop: '2rem' }}>
+                            <p>Inicie a conversa com o professor.</p>
                         </div>
-                        <div>
-                            <p style={{ fontWeight: '600', marginBottom: '0.25rem' }}>
-                                Para: {teacher.name}
-                            </p>
-                            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                                {teacher.email}
-                            </p>
-                        </div>
-                    </div>
+                    ) : (
+                        messages.map((msg, idx) => {
+                            const isMe = msg.sender_type === 'school';
+                            return (
+                                <div key={idx} style={{
+                                    alignSelf: isMe ? 'flex-end' : 'flex-start',
+                                    maxWidth: '80%',
+                                    background: isMe ? 'var(--accent-primary)' : 'rgba(255,255,255,0.1)',
+                                    padding: '0.8rem 1rem',
+                                    borderRadius: '12px',
+                                    borderBottomRightRadius: isMe ? '2px' : '12px',
+                                    borderBottomLeftRadius: !isMe ? '2px' : '12px',
+                                    color: 'white'
+                                }}>
+                                    <div style={{ fontSize: '0.9rem', lineHeight: '1.4' }}>{msg.message || msg.content}</div>
+                                    <div style={{ fontSize: '0.7rem', opacity: 0.7, textAlign: 'right', marginTop: '0.3rem' }}>
+                                        {new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                    <div ref={messagesEndRef} />
                 </div>
 
-                {/* CAMPO DE MENSAGEM */}
-                <div style={{ marginBottom: '1.5rem' }}>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                        Mensagem:
-                    </label>
+                {/* INPUT AREA */}
+                <div style={{
+                    display: 'flex',
+                    gap: '1rem',
+                    alignItems: 'end',
+                    background: 'rgba(0,0,0,0.2)',
+                    padding: '1rem',
+                    borderRadius: '12px'
+                }}>
                     <textarea
                         value={message}
                         onChange={(e) => setMessage(e.target.value)}
-                        placeholder="Digite sua mensagem aqui..."
-                        className="input-field"
+                        placeholder="Digite sua mensagem..."
                         style={{
-                            width: '100%',
-                            minHeight: '150px',
-                            resize: 'vertical',
+                            flex: 1,
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'white',
+                            resize: 'none',
+                            minHeight: '24px',
+                            maxHeight: '100px',
                             fontFamily: 'inherit',
                             fontSize: '1rem',
-                            padding: '1rem'
+                            outline: 'none'
+                        }}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSend();
+                            }
                         }}
                         disabled={sending}
                     />
-                    <div style={{
-                        marginTop: '0.5rem',
-                        fontSize: '0.75rem',
-                        color: 'var(--text-secondary)',
-                        textAlign: 'right'
-                    }}>
-                        {message.length} caracteres
-                    </div>
-                </div>
-
-                {/* BOTÕES */}
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                    <button
-                        onClick={onClose}
-                        className="btn"
-                        style={{
-                            flex: 1,
-                            padding: '0.75rem',
-                            background: 'rgba(255, 255, 255, 0.1)',
-                            border: '1px solid rgba(255, 255, 255, 0.2)'
-                        }}
-                        disabled={sending}
-                    >
-                        Cancelar
-                    </button>
                     <button
                         onClick={handleSend}
-                        className="btn"
+                        disabled={sending || !message.trim()}
                         style={{
-                            flex: 1,
-                            padding: '0.75rem',
-                            background: sending ? 'rgba(16, 185, 129, 0.5)' : '#10b981',
+                            background: sending || !message.trim() ? 'rgba(255,255,255,0.1)' : 'var(--accent-primary)',
                             color: 'white',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '40px',
+                            height: '40px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: '0.5rem',
-                            cursor: sending ? 'not-allowed' : 'pointer'
+                            cursor: sending || !message.trim() ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.2s'
                         }}
-                        disabled={sending}
                     >
                         {sending ? (
-                            <>
-                                <div className="spinner" style={{
-                                    width: '16px',
-                                    height: '16px',
-                                    border: '2px solid rgba(255,255,255,0.3)',
-                                    borderTop: '2px solid white',
-                                    borderRadius: '50%',
-                                    animation: 'spin 1s linear infinite'
-                                }}></div>
-                                Enviando...
-                            </>
+                            <div className="spinner" style={{
+                                width: '16px',
+                                height: '16px',
+                                border: '2px solid rgba(255,255,255,0.3)',
+                                borderTop: '2px solid white',
+                                borderRadius: '50%',
+                                animation: 'spin 1s linear infinite'
+                            }}></div>
                         ) : (
-                            <>
-                                <Send size={18} />
-                                Enviar Mensagem
-                            </>
+                            <Send size={18} />
                         )}
                     </button>
-                </div>
-
-                {/* DICA */}
-                <div style={{
-                    marginTop: '1.5rem',
-                    padding: '1rem',
-                    background: 'rgba(59, 130, 246, 0.1)',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    borderRadius: '8px',
-                    fontSize: '0.875rem',
-                    color: 'var(--text-secondary)'
-                }}>
-                    💡 <strong>Dica:</strong> O professor receberá esta mensagem em seu painel e por email.
                 </div>
             </div>
 

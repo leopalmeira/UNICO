@@ -427,13 +427,23 @@
             background: #f9fafb;
         }
 
-        .chat-screen-content {
-            background: #e5ddd5;
-            min-height: 100vh;
-            padding-bottom: 70px;
-            /* Space for input bar */
+        /* Chat Styles */
+        #chatScreen {
+            height: 100vh;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
+            background: white;
+        }
+
+        .chat-screen-content {
+            background: #e5ddd5;
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            padding-bottom: 0;
+            min-height: 0;
         }
 
         .chat-messages {
@@ -443,6 +453,8 @@
             flex-direction: column;
             gap: 8px;
             overflow-y: auto;
+            padding-bottom: 80px;
+            /* Space for input bar */
         }
 
         .chat-bubble {
@@ -475,6 +487,18 @@
             color: #999;
             text-align: right;
             margin-top: 4px;
+        }
+
+        .date-divider {
+            text-align: center;
+            margin: 15px 0 5px;
+            font-size: 11px;
+            color: #9ca3af;
+            background: rgba(0, 0, 0, 0.05);
+            padding: 4px 12px;
+            border-radius: 12px;
+            align-self: center;
+            width: fit-content;
         }
 
         /* Cards de Eventos */
@@ -987,14 +1011,6 @@
                     </svg>
                 </button>
                 <input type="text" class="chat-input" id="messageInput" placeholder="Mensagem">
-                <button class="chat-btn-icon" id="micBtn" onmousedown="startRecording()" onmouseup="stopRecording()"
-                    ontouchstart="startRecording()" ontouchend="stopRecording()">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="white">
-                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
-                        <path
-                            d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
-                    </svg>
-                </button>
                 <button class="chat-btn-icon" id="sendBtn" style="display: none;" onclick="sendMessage()">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="white">
                         <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
@@ -2554,13 +2570,10 @@
             // Input logic toggle
             const input = document.getElementById('messageInput');
             input.oninput = () => {
-                const mic = document.getElementById('micBtn');
                 const send = document.getElementById('sendBtn');
                 if (input.value.trim().length > 0) {
-                    mic.style.display = 'none';
                     send.style.display = 'block';
                 } else {
-                    mic.style.display = 'block';
                     send.style.display = 'none';
                 }
             };
@@ -2617,36 +2630,40 @@
             // Check if user is near bottom to auto-scroll
             const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
 
+            const serverOrigin = API_URL.replace('/api', '');
+            let lastRenderedDate = null; // Track date changes
+
             // Map messages
-            const html = messages.map(msg => {
+            const html = messages.map((msg, index) => {
                 const isMe = msg.sender_type === 'guardian';
-                let contentHtml = '';
+                let contentHtml = msg.content || '';
 
-                // Adjust URL (API_URL usually http://localhost:3000/api -> server http://localhost:5000)
-                // Need base url. API_URL might be /api relative if proxied or absolute.
-                // Assuming files are served at root /uploads, and API_URL is /api.
-                // We need to strip /api or use a global SERVER_URL.
-                // Hacks: replace '/api' with '' if it is a path info. 
-                // But wait, API_URL in index.html is defined at top.
-                // Let's assume file_url comes as `/uploads/...` from server.
-                // We need server origin.
-                // If API_URL is `http://localhost:5000/api`, then server origin is `http://localhost:5000`.
-                const serverOrigin = API_URL.replace('/api', '');
-
-                if (msg.message_type === 'text') {
-                    contentHtml = msg.content;
-                } else if (msg.message_type === 'image') {
+                if (msg.type === 'image') {
                     contentHtml = `<img src="${serverOrigin}${msg.file_url}" class="chat-img-preview" onclick="window.open(this.src)">`;
-                    if (msg.content) contentHtml += `<div style="margin-top:4px">${msg.content}</div>`;
-                } else if (msg.message_type === 'audio') {
+                } else if (msg.type === 'audio') {
                     contentHtml = `<audio controls src="${serverOrigin}${msg.file_url}" class="chat-audio"></audio>`;
-                } else {
+                } else if (msg.type === 'file') {
                     contentHtml = `<a href="${serverOrigin}${msg.file_url}" target="_blank">📎 ${msg.file_name || 'Arquivo'}</a>`;
                 }
 
-                const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                // Data Handling
+                const rawDate = msg.created_at || '';
+                const currentDate = rawDate ? new Date(rawDate.replace(' ', 'T')) : new Date();
+                const currentDateStr = currentDate.toDateString();
+
+                let dateDividerHtml = '';
+                // Only show divider if date string changed since last message
+                if (lastRenderedDate !== currentDateStr) {
+                    let label = currentDate.toLocaleDateString('pt-BR');
+                    if (currentDateStr === new Date().toDateString()) label = 'Hoje';
+                    dateDividerHtml = `<div class="date-divider">${label}</div>`;
+                    lastRenderedDate = currentDateStr;
+                }
+
+                const time = currentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).replace('Invalid Date', '--:--');
 
                 return `
+                    ${dateDividerHtml}
                     <div class="chat-bubble ${isMe ? 'sent' : 'received'}">
                         ${contentHtml}
                         <div class="chat-time">${time}</div>
@@ -2688,7 +2705,6 @@
             try {
                 // Optimistic UI update could be here
                 input.value = '';
-                document.getElementById('micBtn').style.display = 'block';
                 document.getElementById('sendBtn').style.display = 'none';
 
                 const url = `${API_URL}/guardian/chat/${activeChatStudentId}/messages`;
@@ -2827,6 +2843,17 @@
                     } else if (data.type === 'events') {
                         console.log(`📨 SSE: ${data.data.length} eventos recebidos`);
                         renderEventsFromSSE(data.data);
+                    } else if (data.type === 'notification') {
+                        const notif = data.data;
+                        let msg = "Nova notificação";
+                        /*
+                        if (notif.event_type && (notif.event_type.includes('pickup') || notif.event_type.includes('released'))) {
+                            msg = `O aluno ${notif.student_name || ''} está vindo!`;
+                        } else {
+                            msg = `Notificação: ${notif.event_type}`;
+                        }
+                        showSystemNotification(msg);
+                        */
                     }
                 } catch (e) {
                     console.error('❌ Erro ao processar SSE:', e);
@@ -2837,10 +2864,8 @@
                 console.error('❌ Erro na conexão SSE:', error);
                 // Tentar reconectar após 5 segundos
                 setTimeout(() => {
-                    if (document.getElementById('notificationsScreen').classList.contains('hidden') === false) {
-                        console.log('🔄 Tentando reconectar SSE...');
-                        startEventsSSE();
-                    }
+                    console.log('🔄 Tentando reconectar SSE...');
+                    startEventsSSE();
                 }, 5000);
             };
         }
@@ -2852,6 +2877,18 @@
                 eventsSSE = null;
             }
         }
+
+        /*
+        function showSystemNotification(msg) {
+            if ("Notification" in window) {
+                if (Notification.permission === "granted") {
+                    new Notification("EduFocus", { body: msg });
+                } else if (Notification.permission !== "denied") {
+                    Notification.requestPermission();
+                }
+            }
+        }
+        */
 
         function renderEventsFromSSE(events) {
             const eventsListDiv = document.getElementById('eventsList');
@@ -2903,6 +2940,17 @@
         window.addEventListener('beforeunload', () => {
             stopEventsSSE();
         });
+
+        document.body.addEventListener('click', () => {
+            if ("Notification" in window && Notification.permission === "default") {
+                Notification.requestPermission();
+            }
+        }, { once: true });
+
+        // Ensure SSE starts if not started
+        setTimeout(startEventsSSE, 1000);
+
+
     </script>
 </body>
 

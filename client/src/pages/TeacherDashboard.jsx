@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Menu, BarChart3, Users, MessageSquare, Shuffle, Settings, LogOut, Play, Pause, Camera, TrendingUp, AlertTriangle, CheckCircle, Clock, Brain, BookOpen, Bell, FileText, Calendar, HelpCircle, RefreshCw, Download, Eye, Activity, Zap, Target } from 'lucide-react';
+import { Menu, BarChart3, Users, MessageSquare, Shuffle, Settings, LogOut, Play, Pause, Camera, TrendingUp, AlertTriangle, CheckCircle, Clock, Brain, BookOpen, Bell, FileText, Calendar, HelpCircle, RefreshCw, Download, Eye, Activity, Zap, Target, Send, X } from 'lucide-react';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import EmotionMonitor from '../components/EmotionMonitor';
@@ -271,13 +271,21 @@ export default function TeacherDashboard() {
         try {
             const res = await api.get('/teacher/messages');
             setMessages(res.data || []);
-            const unread = (res.data || []).filter(m => !m.read).length;
+            const unread = (res.data || []).filter(m => !m.read && m.sender_type !== 'teacher').length;
             setUnreadCount(unread);
         } catch (err) {
             console.error('Erro ao carregar mensagens:', err);
             setMessages([]);
         }
     };
+
+    useEffect(() => {
+        if (teacher?.school_id) {
+            loadMessages();
+            const interval = setInterval(loadMessages, 5000);
+            return () => clearInterval(interval);
+        }
+    }, [teacher]);
 
     const markAsRead = async (messageId) => {
         try {
@@ -640,6 +648,7 @@ export default function TeacherDashboard() {
                             messages={messages}
                             onMarkAsRead={markAsRead}
                             onRefresh={loadMessages}
+                            teacher={teacher}
                         />
                     )}
                 </div>
@@ -1093,85 +1102,122 @@ function SeatsTab({ students, lastSeatingChange, daysSinceLastSeating, onShuffle
     );
 }
 
-function MessagesTab({ messages, onMarkAsRead, onRefresh }) {
+function MessagesTab({ messages, onMarkAsRead, onRefresh, teacher }) {
+    const [showCompose, setShowCompose] = useState(false);
+    const [msgText, setMsgText] = useState("");
+    const [sending, setSending] = useState(false);
+
+    const handleSend = async () => {
+        if (!msgText.trim()) return;
+        setSending(true);
+        try {
+            await api.post('/messages/send', {
+                from_user_type: 'teacher',
+                from_user_id: teacher.id,
+                to_user_type: 'school_admin',
+                to_user_id: teacher.school_id,
+                message: msgText
+            });
+            alert('Mensagem enviada!');
+            setMsgText("");
+            setShowCompose(false);
+            onRefresh();
+        } catch (e) {
+            console.error(e);
+            alert('Erro ao enviar');
+        } finally {
+            setSending(false);
+        }
+    };
+
     return (
         <div className="fade-in">
             <div className="content-header">
                 <div className="page-title">
                     <h1>Mensagens</h1>
-                    <div className="page-subtitle">Mensagens da escola e administração</div>
+                    <div className="page-subtitle">Chat com a Coordenação</div>
                 </div>
 
                 <div className="header-actions">
+                    <button className="btn btn-primary" onClick={() => setShowCompose(true)}>
+                        <Send size={18} /> Nova Mensagem
+                    </button>
                     <button className="btn-icon" title="Atualizar" onClick={onRefresh}>
                         <RefreshCw size={20} />
                     </button>
                 </div>
             </div>
 
+            {showCompose && (
+                <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem', border: '1px solid var(--accent-primary)' }}>
+                    <h3 style={{ marginBottom: '1rem' }}>Nova Mensagem para Coordenação</h3>
+                    <textarea
+                        className="input-field"
+                        style={{ width: '100%', minHeight: '100px', marginBottom: '1rem', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', padding: '1rem' }}
+                        value={msgText}
+                        onChange={e => setMsgText(e.target.value)}
+                        placeholder="Digite sua mensagem..."
+                        disabled={sending}
+                    />
+                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                        <button className="btn" onClick={() => setShowCompose(false)} disabled={sending}>Cancelar</button>
+                        <button className="btn btn-primary" onClick={handleSend} disabled={sending}>
+                            {sending ? 'Enviando...' : 'Enviar'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {messages.length === 0 ? (
                 <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center' }}>
                     <Bell size={48} style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }} />
                     <h3>Nenhuma mensagem</h3>
                     <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                        Você não tem mensagens no momento.
+                        Histórico vazio.
                     </p>
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {messages.map(message => (
-                        <div
-                            key={message.id}
-                            className="glass-panel"
-                            style={{
-                                padding: '1.5rem',
-                                borderLeft: message.read ? '3px solid var(--text-secondary)' : '3px solid var(--accent-primary)',
-                                background: message.read ? 'rgba(255, 255, 255, 0.03)' : 'rgba(99, 102, 241, 0.1)'
-                            }}
-                        >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1rem' }}>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                        <h3 style={{ fontSize: '1.1rem', fontWeight: '600' }}>{message.subject || 'Mensagem da Escola'}</h3>
-                                        {!message.read && (
-                                            <span style={{
-                                                background: 'var(--accent-primary)',
-                                                color: 'white',
-                                                padding: '0.25rem 0.5rem',
-                                                borderRadius: '4px',
-                                                fontSize: '0.7rem',
-                                                fontWeight: 'bold'
-                                            }}>
-                                                NOVA
-                                            </span>
-                                        )}
+                    {messages.map(message => {
+                        const isMe = message.sender_type === 'teacher';
+                        return (
+                            <div
+                                key={message.id}
+                                className="glass-panel"
+                                style={{
+                                    padding: '1.5rem',
+                                    borderLeft: isMe ? '3px solid var(--accent-secondary)' : (message.read ? '3px solid var(--text-secondary)' : '3px solid var(--accent-primary)'),
+                                    background: isMe ? 'rgba(16, 185, 129, 0.05)' : (message.read ? 'rgba(255, 255, 255, 0.03)' : 'rgba(99, 102, 241, 0.1)'),
+                                    marginLeft: isMe ? '2rem' : '0',
+                                    marginRight: isMe ? '0' : '2rem'
+                                }}
+                            >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.5rem' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <h3 style={{ fontSize: '1rem', fontWeight: 'bold', color: isMe ? 'var(--accent-secondary)' : 'var(--text-primary)' }}>
+                                                {isMe ? 'Você' : (message.from || 'Escola / Coordenação')}
+                                            </h3>
+                                            {!isMe && !message.read && (
+                                                <span style={{ background: 'var(--accent-primary)', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem' }}>NOVA</span>
+                                            )}
+                                        </div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                            {new Date(message.created_at).toLocaleString('pt-BR')}
+                                        </div>
                                     </div>
-                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                                        De: {message.from || 'Administração'} • {new Date(message.created_at).toLocaleString('pt-BR')}
-                                    </div>
+                                    {!isMe && !message.read && (
+                                        <button className="btn-icon" onClick={() => onMarkAsRead(message.id)} title="Marcar como lida">
+                                            <CheckCircle size={18} />
+                                        </button>
+                                    )}
                                 </div>
-
-                                {!message.read && (
-                                    <button
-                                        className="btn btn-primary"
-                                        style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-                                        onClick={() => onMarkAsRead(message.id)}
-                                    >
-                                        <CheckCircle size={16} /> Marcar como lida
-                                    </button>
-                                )}
+                                <div style={{ lineHeight: '1.5', color: 'var(--text-primary)' }}>
+                                    {message.message || message.content}
+                                </div>
                             </div>
-
-                            <div style={{
-                                padding: '1rem',
-                                background: 'rgba(0, 0, 0, 0.2)',
-                                borderRadius: '8px',
-                                lineHeight: '1.6'
-                            }}>
-                                {message.message || message.content}
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>

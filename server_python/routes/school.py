@@ -480,8 +480,7 @@ def get_pickups():
         FROM pickup_requests p
         JOIN students s ON p.student_id = s.id
         JOIN student_guardians sg ON s.id = sg.student_id AND p.guardian_id = sg.guardian_id
-        WHERE p.status != 'completed'
-        ORDER BY p.timestamp DESC
+        ORDER BY p.timestamp DESC LIMIT 100
     ''')
     
     # Nota: g.name vem do system.db, então precisamos fazer um join manual ou subquery se possível
@@ -505,6 +504,14 @@ def update_pickup_status(request_id):
     
     db = get_school_db(school_id)
     db.execute('UPDATE pickup_requests SET status = ? WHERE id = ?', (status, request_id))
+    
+    # Notificar responsável se status relevante
+    if status in ['released', 'calling', 'approved', 'confirmed']:
+        row = db.execute('SELECT student_id FROM pickup_requests WHERE id = ?', (request_id,)).fetchone()
+        if row:
+            db.execute('INSERT INTO access_logs (student_id, event_type, notified_guardian) VALUES (?, ?, 0)',
+                       (row['student_id'], f'pickup_{status}'))
+
     db.commit()
     
     return jsonify({'success': True})
@@ -680,18 +687,65 @@ def send_chat_message(student_id):
 @school_bp.route('/api/school/chat/broadcast', methods=['POST'])
 @token_required
 def broadcast_message():
-    data = request.json if request.json else {}
-    text = data.get('text', '')
     school_id = g.user.get('school_id') or g.user.get('id')
+    
+    # Handle both JSON and FormData
+    if request.is_json:
+        data = request.json
+        text = data.get('text') or data.get('content')
+        class_id = data.get('classId')
+        file = None
+    else:
+        text = request.form.get('text') or request.form.get('content')
+        class_id = request.form.get('classId')
+        file = request.files.get('file')
+
+    msg_type = 'text'
+    file_url = None
+    file_name = None
+
+    if file:
+        import os, uuid
+        try:
+            ext = os.path.splitext(file.filename)[1]
+            filename = f"broadcast_{uuid.uuid4()}{ext}"
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            uploads_dir = os.path.join(base_dir, 'static', 'uploads')
+            if not os.path.exists(uploads_dir): os.makedirs(uploads_dir)
+            save_path = os.path.join(uploads_dir, filename)
+            file.save(save_path)
+            file_url = f"/static/uploads/{filename}"
+            file_name = file.filename
+            msg_type = 'file'
+        except Exception as e:
+            print(f"Error saving file in broadcast: {e}")
+
     db = get_school_db(school_id)
-    students = db.execute('SELECT id FROM students').fetchall()
-    for s in students:
-        db.execute('''
-            INSERT INTO messages (student_id, sender, text, timestamp)
-            VALUES (?, 'school', ?, datetime('now'))
-        ''', (s['id'], text))
+    
+    students_to_send = []
+    if class_id:
+        try:
+            c = db.execute("SELECT name FROM classes WHERE id = ?", (class_id,)).fetchone()
+            if c:
+                students_to_send = db.execute("SELECT id FROM students WHERE class_name = ?", (c['name'],)).fetchall()
+        except:
+            pass
+    else:
+        students_to_send = db.execute("SELECT id FROM students").fetchall()
+
+    count = 0
+    for s in students_to_send:
+        try:
+            db.execute('''
+                INSERT INTO chat_messages (student_id, school_id, sender_type, sender_id, message_type, content, file_url, file_name, timestamp)
+                VALUES (?, ?, 'school', ?, ?, ?, ?, ?, datetime('now'))
+            ''', (s['id'], school_id, school_id, msg_type, text or '', file_url, file_name))
+            count += 1
+        except Exception as e:
+            print(f"Error sending broadcast to student {s['id']}: {e}")
+
     db.commit()
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'count': count})
 
 # ====== SUPPORT ======
 @school_bp.route('/api/school/support', methods=['POST'])
@@ -706,6 +760,82 @@ def send_support_message():
     ''', (school_id, data.get('message')))
     sys_db.commit()
     return jsonify({'success': True})
+
+# ====== MESSAGES ======
+@school_bp.route('/api/messages/send', methods=['POST'])
+@token_required
+def send_message_generic():
+    data = request.json
+    # Frontend sends: from_user_type, from_user_id, to_user_type, to_user_id, message
+    
+    from_type = data.get('from_user_type')
+    to_type = data.get('to_user_type')
+    msg = data.get('message')
+    
+    # 1. School -> Teacher
+    if from_type == 'school_admin' and to_type == 'teacher':
+        school_id = data.get('from_user_id')
+        teacher_id = data.get('to_user_id')
+        
+        # Security:
+        current_school = g.user.get('school_id') or g.user.get('id')
+        role = g.user.get('role')
+        
+        if role != 'super_admin' and str(current_school) != str(school_id):
+             return jsonify({'error': 'Unauthorized'}), 403
+             
+        db = get_school_db(school_id)
+        db.execute('''
+            INSERT INTO teacher_messages (school_id, teacher_id, sender_type, message)
+            VALUES (?, ?, 'school', ?)
+        ''', (school_id, teacher_id, msg))
+        db.commit()
+        return jsonify({'success': True})
+        
+    # 2. Teacher -> School
+    if from_type == 'teacher' and to_type == 'school_admin':
+        teacher_id = data.get('from_user_id')
+        school_id = data.get('to_user_id')
+        
+        # Security:
+        current_teacher = g.user.get('id')
+        current_school = g.user.get('school_id')
+        
+        # Se for teacher, o ID deve bater e a escola também
+        # (Assumindo que o token do teacher tem school_id)
+        if str(current_teacher) != str(teacher_id):
+             return jsonify({'error': 'Unauthorized: Teacher ID mismatch'}), 403
+             
+        # Se school_id não bater com o do token?
+        if current_school and str(current_school) != str(school_id):
+             return jsonify({'error': 'Unauthorized: School ID mismatch'}), 403
+             
+        db = get_school_db(school_id)
+        db.execute('''
+            INSERT INTO teacher_messages (school_id, teacher_id, sender_type, message)
+            VALUES (?, ?, 'teacher', ?)
+        ''', (school_id, teacher_id, msg))
+        db.commit()
+        return jsonify({'success': True})
+
+    return jsonify({'error': 'Message type not supported'}), 400
+
+@school_bp.route('/api/messages/school-teacher-chat', methods=['GET'])
+@token_required
+def get_school_teacher_chat():
+    teacher_id = request.args.get('teacher_id')
+    school_id = g.user.get('school_id') or g.user.get('id')
+    
+    if not teacher_id:
+        return jsonify([])
+        
+    db = get_school_db(school_id)
+    rows = db.execute('''
+        SELECT * FROM teacher_messages 
+        WHERE teacher_id = ?
+        ORDER BY created_at ASC
+    ''', (teacher_id,)).fetchall()
+    return jsonify([dict(r) for r in rows])
 
 # ====== TEACHER LINKING ======
 @school_bp.route('/api/school/search-teacher', methods=['GET'])
@@ -736,6 +866,34 @@ def unlink_teacher():
     teacher_id = data.get('teacher_id')
     sys_db.execute('UPDATE teachers SET school_id = NULL, status = ? WHERE id = ?', ('inactive', teacher_id))
     sys_db.commit()
+    return jsonify({'success': True})
+
+
+@school_bp.route('/api/school/<int:school_id>/teacher/<int:teacher_id>/link-class', methods=['POST'])
+@token_required
+def link_teacher_to_class(school_id, teacher_id):
+    # Validar se o usuário logado tem permissão para essa escola
+    current_school_id = g.user.get('school_id') or g.user.get('id')
+    
+    # Se for superadmin pode passar, se não, verifica ID
+    if g.user.get('role') != 'super_admin' and str(current_school_id) != str(school_id):
+         return jsonify({'message': 'Acesso negado'}), 403
+
+    data = request.json
+    class_id = data.get('class_id')
+    
+    if not class_id:
+        return jsonify({'message': 'Turma não informada'}), 400
+
+    db = get_school_db(school_id)
+    # Verificar se já existe vínculo
+    existing = db.execute('SELECT id FROM teacher_classes WHERE teacher_id = ? AND class_id = ?', (teacher_id, class_id)).fetchone()
+    if existing:
+         return jsonify({'message': 'Professor já vinculado a esta turma'}), 400
+         
+    db.execute('INSERT INTO teacher_classes (teacher_id, class_id) VALUES (?, ?)', (teacher_id, class_id))
+    db.commit()
+    
     return jsonify({'success': True})
 
 # ====== EMPLOYEE ATTENDANCE ======
