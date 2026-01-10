@@ -2,7 +2,7 @@ import { LogOut, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
-export default function Sidebar({ menuItems, activeTab, setActiveTab, isOpen, expandedMenus, toggleMenu }) {
+export default function Sidebar({ menuItems, activeTab, setActiveTab, isOpen, expandedMenus, toggleMenu, onAffiliateClick }) {
     const { logout } = useAuth();
     const navigate = useNavigate();
 
@@ -16,6 +16,14 @@ export default function Sidebar({ menuItems, activeTab, setActiveTab, isOpen, ex
             toggleMenu(item.id);
         } else {
             setActiveTab(item.id);
+        }
+    };
+
+    const handleSubmenuClick = (subItem) => {
+        if (subItem.isAffiliate && onAffiliateClick) {
+            onAffiliateClick(subItem.affiliateId, subItem.label);
+        } else {
+            setActiveTab(subItem.id);
         }
     };
 
@@ -84,43 +92,50 @@ export default function Sidebar({ menuItems, activeTab, setActiveTab, isOpen, ex
                                 {item.submenu.map((subItem) => (
                                     <button
                                         key={subItem.id}
-                                        onClick={() => setActiveTab(subItem.id)}
+                                        onClick={() => handleSubmenuClick(subItem)}
                                         style={{
                                             display: 'flex',
                                             alignItems: 'center',
                                             gap: '0.5rem',
-                                            padding: '0.625rem 0.75rem',
+                                            padding: subItem.isMainSchool ? '0.75rem 0.75rem' : '0.5rem 0.75rem',
                                             borderRadius: '6px',
-                                            background: activeTab === subItem.id
-                                                ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(16, 185, 129, 0.2))'
-                                                : 'transparent',
-                                            color: activeTab === subItem.id ? '#3b82f6' : 'var(--text-secondary)',
-                                            border: activeTab === subItem.id ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
+                                            background: subItem.isMainSchool
+                                                ? 'rgba(16, 185, 129, 0.15)'
+                                                : (activeTab === subItem.id ? 'rgba(59, 130, 246, 0.15)' : 'transparent'),
+                                            color: subItem.isMainSchool
+                                                ? '#10b981'
+                                                : (activeTab === subItem.id ? '#3b82f6' : 'var(--text-secondary)'),
+                                            border: subItem.isMainSchool
+                                                ? '1px solid rgba(16, 185, 129, 0.3)'
+                                                : (activeTab === subItem.id ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid transparent'),
                                             width: '100%',
                                             textAlign: 'left',
                                             transition: 'all 0.2s',
                                             cursor: 'pointer',
                                             fontSize: '0.875rem',
-                                            fontWeight: activeTab === subItem.id ? '600' : '400'
+                                            fontWeight: subItem.isMainSchool ? '600' : (activeTab === subItem.id ? '600' : '400'),
+                                            marginBottom: subItem.isMainSchool ? '0.5rem' : '0'
                                         }}
                                         onMouseEnter={(e) => {
-                                            if (activeTab !== subItem.id) {
+                                            if (!subItem.isMainSchool && activeTab !== subItem.id) {
                                                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
                                             }
                                         }}
                                         onMouseLeave={(e) => {
-                                            if (activeTab !== subItem.id) {
+                                            if (!subItem.isMainSchool && activeTab !== subItem.id) {
                                                 e.currentTarget.style.background = 'transparent';
                                             }
                                         }}
                                     >
-                                        <div style={{
-                                            width: '4px',
-                                            height: '4px',
-                                            borderRadius: '50%',
-                                            background: activeTab === subItem.id ? '#3b82f6' : 'var(--text-secondary)',
-                                            transition: 'all 0.2s'
-                                        }} />
+                                        {!subItem.isAffiliate && (
+                                            <div style={{
+                                                width: '4px',
+                                                height: '4px',
+                                                borderRadius: '50%',
+                                                background: activeTab === subItem.id ? '#3b82f6' : 'var(--text-secondary)',
+                                                transition: 'all 0.2s'
+                                            }} />
+                                        )}
                                         <span>{subItem.label}</span>
                                     </button>
                                 ))}

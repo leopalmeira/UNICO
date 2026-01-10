@@ -179,6 +179,7 @@ function SchoolsTab({ schools, loadSchools }) {
                                 <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem' }}>{school.name}</h3>
                                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
                                     <div>Email: {school.email}</div>
+                                    {school.cnpj && <div>CNPJ: {school.cnpj}</div>}
                                     <div>Administrador: {school.admin_name}</div>
                                     <div>Endereço: {school.address}</div>
                                     <div>Status: <span style={{ color: school.status === 'active' ? 'var(--success)' : 'var(--danger)' }}>{school.status === 'active' ? 'Ativa' : 'Inativa'}</span></div>

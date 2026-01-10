@@ -11,6 +11,7 @@ from routes.technician import technician_bp
 from routes.support import support_bp
 from routes.teacher import teacher_bp
 from routes.location import location_bp
+from routes.affiliates import affiliates_bp
 
 app = Flask(__name__, static_folder='../client/dist')
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0 # Desativar cache em desenvolvimento
@@ -43,6 +44,7 @@ app.register_blueprint(technician_bp)
 app.register_blueprint(support_bp)
 app.register_blueprint(teacher_bp)
 app.register_blueprint(location_bp)
+app.register_blueprint(affiliates_bp)
 
 # Rota para servir Uploads
 UPLOAD_FOLDER_ROOT = os.path.join(os.getcwd(), 'uploads')
@@ -81,3 +83,4 @@ if __name__ == '__main__':
     print("📱 Notificações: App do Responsável (Access Logs)")
     print("Use CTRL+C para parar.")
     app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+

@@ -1,7 +1,7 @@
 # Netlify Configuration
 [build]
-  publish = "client/public/guardian-pwa"
-  command = "echo 'No build needed'"
+  publish = "dist"
+  command = "npm run build"
 
 [[redirects]]
   from = "/*"

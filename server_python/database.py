@@ -50,6 +50,7 @@ def init_system_db():
         admin_name TEXT,
         email TEXT UNIQUE,
         password TEXT,
+        cnpj TEXT,
         address TEXT,
         latitude REAL,
         longitude REAL,
@@ -169,6 +170,24 @@ def init_system_db():
         sent_at DATETIME,
         status TEXT
     )''')
+
+    cur.execute('''
+    CREATE TABLE IF NOT EXISTS school_affiliates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_school_id INTEGER,
+        affiliate_school_id INTEGER,
+        token TEXT UNIQUE,
+        status TEXT DEFAULT 'active',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(parent_school_id) REFERENCES schools(id),
+        FOREIGN KEY(affiliate_school_id) REFERENCES schools(id)
+    )''')
+
+    # Migração: adicionar CNPJ em escolas existentes
+    try:
+        cur.execute("ALTER TABLE schools ADD COLUMN cnpj TEXT")
+    except:
+        pass  # Coluna já existe
 
     conn.commit()
     conn.close()

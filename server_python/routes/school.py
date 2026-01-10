@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, g
 from .auth import token_required
+from .affiliate_helpers import get_accessible_school_id
 from database import get_system_db, get_school_db
 import bcrypt
 
@@ -8,7 +9,7 @@ school_bp = Blueprint('school', __name__)
 @school_bp.route('/api/school/students', methods=['GET'])
 @token_required
 def get_students():
-    school_id = g.user.get('school_id') or g.user.get('id')
+    school_id = get_accessible_school_id()
     db = get_school_db(school_id)
     cur = db.cursor()
     
@@ -94,7 +95,7 @@ def create_student():
 @token_required
 def get_teachers():
     # Professores ficam no DB do Sistema, mas filtrados por school_id
-    school_id = g.user.get('school_id') or g.user.get('id')
+    school_id = get_accessible_school_id()
     sys_db = get_system_db()
     cur = sys_db.cursor()
     
@@ -109,7 +110,7 @@ def get_teachers():
 @school_bp.route('/api/school/classes', methods=['GET'])
 @token_required
 def get_classes():
-    school_id = g.user.get('school_id') or g.user.get('id')
+    school_id = get_accessible_school_id()
     db = get_school_db(school_id)
     cur = db.cursor()
     cur.execute('SELECT * FROM classes')
@@ -180,7 +181,7 @@ def create_teacher():
 def get_school_settings():
     school_id = g.user.get('school_id') or g.user.get('id')
     db = get_system_db()
-    school = db.execute('SELECT latitude, longitude, address, number, zip_code FROM schools WHERE id = ?', (school_id,)).fetchone()
+    school = db.execute('SELECT id, name, email, cnpj, latitude, longitude, address, number, zip_code FROM schools WHERE id = ?', (school_id,)).fetchone()
     return jsonify(dict(school) if school else {})
 
 @school_bp.route('/api/school/settings', methods=['POST'])
@@ -220,11 +221,38 @@ def update_school_settings():
             except Exception as e:
                 print(f"ERROR: Falha no geocoding backend: {e}")
 
-        db.execute('''
+        name = data.get('name')
+        cnpj = data.get('cnpj')
+        email = data.get('email')
+        
+        # Build dynamic query based on provided fields
+        update_fields = []
+        params = []
+        
+        if name:
+            update_fields.append("name = ?")
+            params.append(name)
+        if cnpj:
+            update_fields.append("cnpj = ?")
+            params.append(cnpj)
+        if email:
+            update_fields.append("email = ?")
+            params.append(email)
+            
+        # Always update address fields
+        update_fields.extend(["latitude = ?", "longitude = ?", "address = ?", "number = ?", "zip_code = ?"])
+        params.extend([lat, lng, address, number, zip_code])
+        
+        # Add ID at the end
+        params.append(school_id)
+        
+        query = f'''
             UPDATE schools 
-            SET latitude = ?, longitude = ?, address = ?, number = ?, zip_code = ?
+            SET {", ".join(update_fields)}
             WHERE id = ?
-        ''', (lat, lng, address, number, zip_code, school_id))
+        '''
+        
+        db.execute(query, params)
         
         db.commit()
         print("DEBUG: Dados salvos com sucesso no DB.")

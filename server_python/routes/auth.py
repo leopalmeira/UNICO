@@ -113,12 +113,13 @@ def register_school():
     try:
         cur = db.cursor()
         cur.execute('''
-            INSERT INTO schools (name, email, password, address, admin_name)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO schools (name, email, password, cnpj, address, admin_name)
+            VALUES (?, ?, ?, ?, ?, ?)
         ''', (
             data.get('name'), 
             data.get('email'), 
-            hashed, 
+            hashed,
+            data.get('cnpj'),
             data.get('address'),
             data.get('admin_name', 'Admin') # Default admin name if not provided
         ))

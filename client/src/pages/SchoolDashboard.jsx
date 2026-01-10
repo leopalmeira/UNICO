@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, GraduationCap, ClipboardCheck, HelpCircle, FileText, BarChart3, MessageCircle, Menu, Camera, Clock, Calendar } from 'lucide-react';
+import { Users, GraduationCap, ClipboardCheck, HelpCircle, FileText, BarChart3, MessageCircle, Menu, Camera, Clock, Calendar, Building2, Edit, Save, X } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import WhatsAppPanel from '../components/WhatsAppPanel'; // Manter caso queira voltar
 import SchoolCommunicationPanel from '../components/SchoolCommunicationPanel';
@@ -19,6 +19,8 @@ import EmployeeManagement from '../components/EmployeeManagement';
 import EmployeeAttendancePanel from '../components/EmployeeAttendancePanel';
 import SchoolPickupsManager from '../components/SchoolPickupsManager';
 import EmployeeAttendanceReport from '../components/EmployeeAttendanceReport';
+import AffiliatesPanel from '../components/AffiliatesPanel';
+import SchoolSelector from '../components/SchoolSelector';
 import { useAuth } from '../context/AuthContext';
 
 export default function SchoolDashboard() {
@@ -51,6 +53,19 @@ export default function SchoolDashboard() {
     const [showMetricsModal, setShowMetricsModal] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [cameras, setCameras] = useState([]);
+
+    // School Edit State
+    const [isEditSchoolModalOpen, setIsEditSchoolModalOpen] = useState(false);
+    const [editSchoolData, setEditSchoolData] = useState({
+        name: '',
+        email: '',
+        cnpj: '',
+        address: '',
+        number: '',
+        zip_code: '',
+        latitude: '',
+        longitude: ''
+    });
 
     useEffect(() => {
         document.body.classList.add('force-landscape');
@@ -86,9 +101,47 @@ export default function SchoolDashboard() {
 
     const [expandedMenus, setExpandedMenus] = useState({
         students: false,
-        employees: false
+        employees: false,
+        affiliates: false
     });
 
+    const [affiliates, setAffiliates] = useState([]);
+    // Get selected school from localStorage or default to user's school
+    const [currentSchoolId, setCurrentSchoolId] = useState(() => {
+        const saved = localStorage.getItem('selectedSchoolId');
+        return saved ? parseInt(saved) : schoolId;
+    });
+
+    // Load affiliates
+    useEffect(() => {
+        loadAffiliates();
+    }, []);
+
+    const loadAffiliates = async () => {
+        try {
+            const res = await api.get('/school/affiliates/list');
+            setAffiliates(res.data.affiliates || []);
+        } catch (err) {
+            console.error('Erro ao carregar filiais:', err);
+        }
+    };
+
+    const switchToAffiliate = async (affiliateId, affiliateName) => {
+        try {
+            const res = await api.post(`/school/affiliates/switch/${affiliateId}`);
+            // Save to localStorage
+            localStorage.setItem('selectedSchoolId', affiliateId);
+            setCurrentSchoolId(affiliateId);
+            alert(`Agora visualizando: ${affiliateName}`);
+            // Reload page to refresh all data
+            window.location.reload();
+        } catch (err) {
+            console.error('Erro ao alternar escola:', err);
+            alert('Erro ao alternar escola');
+        }
+    };
+
+    // Build menu items with dynamic affiliates submenu
     const menuItems = [
         { id: 'teachers', label: 'Professores', icon: <GraduationCap size={20} /> },
         { id: 'classes', label: 'Turmas', icon: <Users size={20} /> },
@@ -117,10 +170,75 @@ export default function SchoolDashboard() {
         },
         { id: 'events', label: 'Eventos', icon: <Calendar size={20} /> },
         { id: 'messages', label: 'Mensagens', icon: <MessageCircle size={20} /> },
+        {
+            id: 'affiliates',
+            label: 'Filiais',
+            icon: <Building2 size={20} />,
+            hasSubmenu: true,
+            submenu: [
+                // First item: Return to main school
+                {
+                    id: `school-${schoolId}`,
+                    label: user?.name || 'Minha Escola',
+                    isAffiliate: true,
+                    affiliateId: schoolId,
+                    isMainSchool: true
+                },
+                { id: 'affiliates', label: 'Gerenciar Filiais' },
+                ...affiliates.map(aff => ({
+                    id: `affiliate-${aff.school_id}`,
+                    label: aff.name,
+                    isAffiliate: true,
+                    affiliateId: aff.school_id
+                }))
+            ]
+        },
         { id: 'support', label: 'Suporte', icon: <HelpCircle size={20} /> },
         { id: 'faq', label: 'FAQ', icon: <FileText size={20} /> },
         { id: 'pickups', label: 'Portaria (Geral)', icon: <Clock size={20} /> }
     ];
+
+    const openEditSchoolModal = async () => {
+        try {
+            // First try to use current user data
+            setEditSchoolData({
+                name: user?.name || '',
+                email: user?.email || '',
+                cnpj: user?.cnpj || '',
+                address: user?.address || '',
+                number: user?.number || '',
+                zip_code: user?.zip_code || '',
+                latitude: user?.latitude || '',
+                longitude: user?.longitude || ''
+            });
+
+            // Then fetch latest full data
+            const res = await api.get('/school/settings');
+            if (res.data) {
+                setEditSchoolData(prev => ({
+                    ...prev,
+                    ...res.data
+                }));
+            }
+            setIsEditSchoolModalOpen(true);
+        } catch (err) {
+            console.error('Error fetching school settings:', err);
+            // Open anyway with what we have
+            setIsEditSchoolModalOpen(true);
+        }
+    };
+
+    const handleUpdateSchool = async () => {
+        try {
+            await api.post('/school/settings', editSchoolData);
+            alert('Dados da escola atualizados com sucesso!');
+            setIsEditSchoolModalOpen(false);
+            window.location.reload(); // Reload to reflect changes
+        } catch (err) {
+            console.error('Erro ao atualizar escola:', err);
+            alert('Erro ao atualizar dados: ' + (err.response?.data?.error || err.message));
+        }
+    };
 
     const toggleMenu = (menuId) => {
         setExpandedMenus(prev => ({
@@ -182,7 +300,10 @@ export default function SchoolDashboard() {
 
     const loadClasses = async () => {
         try {
-            const res = await api.get('/school/classes');
+            const url = currentSchoolId !== schoolId
+                ? `/school/classes?school_id=${currentSchoolId}`
+                : '/school/classes';
+            const res = await api.get(url);
             setClasses(res.data);
         } catch (err) {
             console.error('Failed to load classes', err);
@@ -206,7 +327,10 @@ export default function SchoolDashboard() {
 
     const loadTeachers = async () => {
         try {
-            const res = await api.get('/school/teachers');
+            const url = currentSchoolId !== schoolId
+                ? `/school/teachers?school_id=${currentSchoolId}`
+                : '/school/teachers';
+            const res = await api.get(url);
             setTeachers(res.data);
         } catch (err) {
             console.error('Failed to load teachers', err);
@@ -215,7 +339,10 @@ export default function SchoolDashboard() {
 
     const loadStudents = async () => {
         try {
-            const res = await api.get('/school/students');
+            const url = currentSchoolId !== schoolId
+                ? `/school/students?school_id=${currentSchoolId}`
+                : '/school/students';
+            const res = await api.get(url);
             setStudents(res.data);
         } catch (err) {
             console.error('Failed to load students', err);
@@ -436,13 +563,89 @@ export default function SchoolDashboard() {
                 isOpen={mobileMenuOpen}
                 expandedMenus={expandedMenus}
                 toggleMenu={toggleMenu}
+                onAffiliateClick={switchToAffiliate}
             />
 
             <div className="main-content">
+                {/* School Header */}
+                <div style={{
+                    marginBottom: '1.5rem',
+                    padding: '1.5rem',
+                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))',
+                    borderRadius: 'var(--radius)',
+                    border: '1px solid rgba(99, 102, 241, 0.2)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'start'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '1.5rem',
+                            fontWeight: '700',
+                            color: 'white'
+                        }}>
+                            {user?.name?.charAt(0) || 'E'}
+                        </div>
+                        <div>
+                            <h1 style={{
+                                fontSize: '1.75rem',
+                                fontWeight: '700',
+                                marginBottom: '0.25rem',
+                                background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
+                                WebkitBackgroundClip: 'text',
+                                WebkitTextFillColor: 'transparent',
+                                backgroundClip: 'text'
+                            }}>
+                                {user?.name || 'Escola'}
+                            </h1>
+                            <p style={{
+                                fontSize: '0.875rem',
+                                color: 'var(--text-secondary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                flexWrap: 'wrap'
+                            }}>
+                                <span>📧 {user?.email}</span>
+                                {user?.cnpj && <span>• 🏢 CNPJ: {user?.cnpj}</span>}
+                                {user?.address && <span>• 📍 {user?.address}</span>}
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={openEditSchoolModal}
+                        className="btn"
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            padding: '0.5rem',
+                            minWidth: 'auto'
+                        }}
+                        title="Editar Informações da Escola"
+                    >
+                        <Edit size={18} />
+                    </button>
+                </div>
+
+                <SchoolSelector
+                    currentSchoolId={currentSchoolId}
+                    onSchoolChange={(school) => {
+                        console.log('Escola alterada:', school);
+                        // Recarregar dados da nova escola
+                        window.location.reload();
+                    }}
+                />
                 {activeTab === 'teachers' && (
                     <div className="fade-in">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                            <h1 style={{ fontSize: '2rem', fontWeight: '700' }}>Professores</h1>
+                            <h1 style={{ fontSize: '2rem', fontWeight: '700' }}>Professores ({teachers.length})</h1>
                             <button className="btn btn-primary" onClick={() => setShowLinkModal(true)}>
                                 Buscar e Vincular Professor
                             </button>
@@ -823,6 +1026,20 @@ export default function SchoolDashboard() {
                     </div>
                 )}
 
+                {activeTab === 'affiliates' && (
+                    <div className="fade-in">
+                        <AffiliatesPanel
+                            schoolId={schoolId}
+                            onSwitchSchool={(school) => {
+                                // Atualizar contexto da escola visualizada
+                                console.log('Alternando para escola:', school);
+                                // Aqui você pode adicionar lógica para atualizar o estado global
+                                // e recarregar dados da nova escola
+                            }}
+                        />
+                    </div>
+                )}
+
                 {activeTab === 'pickups' && (
                     <SchoolPickupsManager />
                 )}
@@ -873,6 +1090,105 @@ export default function SchoolDashboard() {
                         loadClasses();
                     }}
                 />
+            )}
+
+            {/* Modal de Edição da Escola */}
+            {isEditSchoolModalOpen && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0,0,0,0.8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000
+                }}>
+                    <div className="glass-panel" style={{ width: '100%', maxWidth: '600px', padding: '2rem', maxHeight: '90vh', overflowY: 'auto' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                            <h2 style={{ fontSize: '1.5rem', fontWeight: '700' }}>Editar Informações da Escola</h2>
+                            <button onClick={() => setIsEditSchoolModalOpen(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Nome da Escola *</label>
+                                <input
+                                    className="input-field"
+                                    value={editSchoolData.name}
+                                    onChange={e => setEditSchoolData({ ...editSchoolData, name: e.target.value })}
+                                    placeholder="Nome da Escola"
+                                />
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Email *</label>
+                                    <input
+                                        className="input-field"
+                                        value={editSchoolData.email}
+                                        onChange={e => setEditSchoolData({ ...editSchoolData, email: e.target.value })}
+                                        placeholder="Email da Escola"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>CNPJ</label>
+                                    <input
+                                        className="input-field"
+                                        value={editSchoolData.cnpj}
+                                        onChange={e => setEditSchoolData({ ...editSchoolData, cnpj: e.target.value })}
+                                        placeholder="00.000.000/0000-00"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Endereço</label>
+                                <input
+                                    className="input-field"
+                                    value={editSchoolData.address}
+                                    onChange={e => setEditSchoolData({ ...editSchoolData, address: e.target.value })}
+                                    placeholder="Rua, Avenida..."
+                                />
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Número</label>
+                                    <input
+                                        className="input-field"
+                                        value={editSchoolData.number}
+                                        onChange={e => setEditSchoolData({ ...editSchoolData, number: e.target.value })}
+                                        placeholder="Número"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>CEP</label>
+                                    <input
+                                        className="input-field"
+                                        value={editSchoolData.zip_code}
+                                        onChange={e => setEditSchoolData({ ...editSchoolData, zip_code: e.target.value })}
+                                        placeholder="00000-000"
+                                    />
+                                </div>
+                            </div>
+
+                            <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                                <button className="btn" onClick={() => setIsEditSchoolModalOpen(false)} style={{ background: 'var(--bg-secondary)' }}>
+                                    Cancelar
+                                </button>
+                                <button className="btn btn-primary" onClick={handleUpdateSchool}>
+                                    <Save size={18} style={{ marginRight: '0.5rem' }} />
+                                    Salvar Alterações
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

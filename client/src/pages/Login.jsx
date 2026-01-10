@@ -16,6 +16,7 @@ export default function Login() {
         name: '',
         subject: '',
         admin_name: '',
+        cnpj: '',
         address: ''
     });
 
@@ -71,7 +72,7 @@ export default function Login() {
                     : 'Escola cadastrada com sucesso! Faça login.');
                 setTimeout(() => {
                     setIsLogin(true);
-                    setFormData({ email: '', password: '', name: '', subject: '', admin_name: '', address: '' });
+                    setFormData({ email: '', password: '', name: '', subject: '', admin_name: '', cnpj: '', address: '' });
                 }, 3000);
             } catch (err) {
                 setError(err.response?.data?.message || 'Erro no cadastro');
@@ -163,6 +164,7 @@ export default function Login() {
                     {!isLogin && registerType === 'school' && (
                         <>
                             <input className="input-field" name="name" placeholder="Nome da Escola" value={formData.name} required onChange={handleChange} />
+                            <input className="input-field" name="cnpj" placeholder="CNPJ (apenas números)" value={formData.cnpj} onChange={handleChange} maxLength="14" />
                             <input className="input-field" name="admin_name" placeholder="Nome do Administrador" value={formData.admin_name} required onChange={handleChange} />
                             <input className="input-field" name="address" placeholder="Endereço" value={formData.address} required onChange={handleChange} />
                         </>
