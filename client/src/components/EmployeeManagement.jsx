@@ -125,13 +125,18 @@ export default function EmployeeManagement({ schoolId }) {
             if (editingEmployee) {
                 // Atualizar funcionário existente
                 console.log('🔄 Atualizando funcionário:', editingEmployee.id, formData);
-                await api.put(`/school/employees/${editingEmployee.id}`, formData);
-                alert('✅ Funcionário atualizado com sucesso!');
+                const res = await api.put(`/school/employees/${editingEmployee.id}`, formData);
+                alert('✅ ' + (res.data.message || 'Funcionário atualizado com sucesso!'));
             } else {
                 // Cadastrar novo funcionário
                 console.log('➕ Cadastrando funcionário:', formData);
-                await api.post('/school/employees', formData);
-                alert('✅ Funcionário cadastrado com sucesso!');
+                const res = await api.post('/school/employees', formData);
+
+                if (res.data.generated_password) {
+                    alert(`✅ Funcionário cadastrado com sucesso!\n\n🔑 SENHA DE ACESSO GERADA: ${res.data.generated_password}\n\nPor favor, entregue esta senha ao funcionário para uso no Ponto Biométrico.`);
+                } else {
+                    alert('✅ Funcionário cadastrado com sucesso!');
+                }
             }
 
             setFormData({
@@ -268,6 +273,23 @@ export default function EmployeeManagement({ schoolId }) {
                                 </div>
                             )}
                         </div>
+
+                        {editingEmployee && (
+                            <div style={{ gridColumn: '1 / -1', marginBottom: '1rem', background: 'rgba(59, 130, 246, 0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#3b82f6', fontWeight: '600' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.reset_password || false}
+                                        onChange={(e) => setFormData({ ...formData, reset_password: e.target.checked })}
+                                        style={{ width: '1.25rem', height: '1.25rem' }}
+                                    />
+                                    Gerar Nova Senha de Acesso
+                                </label>
+                                <p style={{ marginLeft: '1.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                                    Marque esta opção se o funcionário esqueceu a senha ou precisa de um novo acesso. A nova senha será exibida após salvar.
+                                </p>
+                            </div>
+                        )}
 
                         <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '1rem' }}>
                             <button type="submit" className="btn btn-primary">

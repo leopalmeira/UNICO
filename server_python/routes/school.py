@@ -133,6 +133,40 @@ def create_class():
         print(f"❌ Erro ao criar turma: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@school_bp.route('/api/school/classes/<int:class_id>', methods=['DELETE'])
+@token_required
+def delete_class(class_id):
+    school_id = g.user.get('school_id') or g.user.get('id')
+    
+    try:
+        db = get_school_db(school_id)
+        cur = db.cursor()
+
+        # Verificar se turma existe e pegar o nome
+        row = cur.execute('SELECT name FROM classes WHERE id = ?', (class_id,)).fetchone()
+        if not row:
+            db.close()
+            return jsonify({'error': 'Turma não encontrada'}), 404
+        
+        class_name = row['name']
+
+        # Verificar se há alunos na turma
+        student_count = cur.execute('SELECT COUNT(*) as count FROM students WHERE class_name = ?', (class_name,)).fetchone()['count']
+        
+        if student_count > 0:
+            db.close()
+            return jsonify({'error': f'Não é possível excluir: existem {student_count} alunos nesta turma.'}), 400
+
+        # Excluir
+        cur.execute('DELETE FROM classes WHERE id = ?', (class_id,))
+        db.commit()
+        db.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error deleting class: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @school_bp.route('/api/school/class/<int:class_id>/students', methods=['GET'])
 @token_required
 def get_class_students(class_id):
@@ -598,13 +632,59 @@ def get_employees():
 def create_employee():
     data = request.json
     school_id = g.user.get('school_id') or g.user.get('id')
+    
+    # Gerar senha aleatória
+    import random
+    import string
+    password_plain = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+    hashed = bcrypt.hashpw(password_plain.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    
+    email = data.get('email')
+    
+    guardian_id = None
+    if email:
+        sys_db = get_system_db()
+        # Verificar se email já existe
+        existing = sys_db.execute('SELECT id FROM guardians WHERE email = ?', (email,)).fetchone()
+        
+        if existing:
+            guardian_id = existing['id']
+            # Opcional: Atualizar role se necessário, ou manter.
+            # Se for guardian também, ok. Ele terá multiplos papeis ou o sistema validará por contexto.
+            # Aqui vamos forçar update da role se estiver nulo? Não, melhor adicionar.
+            # Por simplicidade, assumimos que ele ganha acesso.
+        else:
+            sys_db.execute('''
+                INSERT INTO guardians (name, email, password, phone, role)
+                VALUES (?, ?, ?, ?, 'employee')
+            ''', (data.get('name'), email, hashed, data.get('phone'),))
+            guardian_id = sys_db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            sys_db.commit()
+    
     db = get_school_db(school_id)
     db.execute('''
-        INSERT INTO employees (name, role, photo_url, face_descriptor)
-        VALUES (?, ?, ?, ?)
-    ''', (data.get('name'), data.get('role'), data.get('photo_url'), data.get('face_descriptor')))
+        INSERT INTO employees (name, role, photo_url, face_descriptor, email, phone, employee_id, work_start_time, work_end_time, guardian_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        data.get('name'), 
+        data.get('role'), 
+        data.get('photo_url'), 
+        data.get('face_descriptor'),
+        data.get('email'),
+        data.get('phone'),
+        data.get('employee_id'),
+        data.get('work_start_time'),
+        data.get('work_end_time'),
+        guardian_id
+    ))
     db.commit()
-    return jsonify({'success': True})
+    
+    # Retornar senha para exibir ao admin
+    return jsonify({
+        'success': True, 
+        'generated_password': password_plain if not existing else None,
+        'message': 'Funcionário cadastrado. Senha gerada.' if not existing else 'Funcionário cadastrado. Associado a conta existente.'
+    })
 
 @school_bp.route('/api/school/employees/<int:emp_id>', methods=['PUT'])
 @token_required
@@ -612,12 +692,84 @@ def update_employee(emp_id):
     data = request.json
     school_id = g.user.get('school_id') or g.user.get('id')
     db = get_school_db(school_id)
+    
+    # Atualizar dados locais
     db.execute('''
-        UPDATE employees SET name=?, role=?, photo_url=?, face_descriptor=?
+        UPDATE employees SET name=?, role=?, photo_url=?, face_descriptor=?, 
+                             email=?, phone=?, employee_id=?, work_start_time=?, work_end_time=?
         WHERE id=?
-    ''', (data.get('name'), data.get('role'), data.get('photo_url'), data.get('face_descriptor'), emp_id))
+    ''', (
+        data.get('name'), 
+        data.get('role'), 
+        data.get('photo_url'), 
+        data.get('face_descriptor'),
+        data.get('email'),
+        data.get('phone'),
+        data.get('employee_id'),
+        data.get('work_start_time'),
+        data.get('work_end_time'),
+        emp_id
+    ))
     db.commit()
-    return jsonify({'success': True})
+    
+    # Tentar atualizar/criar login no sistema
+    emp = db.execute('SELECT guardian_id FROM employees WHERE id = ?', (emp_id,)).fetchone()
+    guardian_id = emp['guardian_id']
+    email = data.get('email')
+    new_password = None
+    
+    reset_password = data.get('reset_password')
+    
+    if email:
+        try:
+            sys_db = get_system_db()
+            import random
+            import string
+            
+            if guardian_id:
+                sys_db.execute('UPDATE guardians SET email=?, phone=?, name=? WHERE id=?', 
+                              (email, data.get('phone'), data.get('name'), guardian_id))
+                
+                if reset_password:
+                    new_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+                    hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    sys_db.execute('UPDATE guardians SET password=? WHERE id=?', (hashed, guardian_id))
+                
+                sys_db.commit()
+            else:
+                # Criar login para func antigo (se não tinha)
+                # Check email existence
+                exist = sys_db.execute('SELECT id FROM guardians WHERE email=?', (email,)).fetchone()
+                if exist:
+                    guardian_id = exist['id']
+                    # Se pediu reset, reseta do existente
+                    if reset_password:
+                        new_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+                        hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                        sys_db.execute('UPDATE guardians SET password=? WHERE id=?', (hashed, guardian_id))
+                    
+                    # GARANTIR que a role seja employee (caso fosse guardian simples antes)
+                    sys_db.execute("UPDATE guardians SET role='employee' WHERE id=?", (guardian_id,))
+                    sys_db.commit()
+                else:
+                    new_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+                    hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    sys_db.execute('INSERT INTO guardians (name, email, password, phone, role) VALUES (?, ?, ?, ?, "employee")',
+                                  (data.get('name'), email, hashed, data.get('phone')))
+                    guardian_id = sys_db.execute('SELECT last_insert_rowid()').fetchone()[0]
+                    sys_db.commit()
+                
+                # Vincular
+                db.execute('UPDATE employees SET guardian_id=? WHERE id=?', (guardian_id, emp_id))
+                db.commit()
+        except Exception as e:
+            print(f"Erro update login func: {e}")
+            pass
+
+    return jsonify({
+        'success': True,
+        'message': 'Funcionário atualizado.' + (f' Senha de acesso gerada: {new_password}' if new_password else '')
+    })
 
 @school_bp.route('/api/school/employees/<int:emp_id>', methods=['DELETE'])
 @token_required
@@ -882,9 +1034,23 @@ def link_teacher():
     data = request.json
     school_id = g.user.get('school_id') or g.user.get('id')
     teacher_id = data.get('teacher_id')
+    class_ids = data.get('class_ids', [])
+    
     sys_db = get_system_db()
     sys_db.execute('UPDATE teachers SET school_id = ?, status = ? WHERE id = ?', (school_id, 'active', teacher_id))
     sys_db.commit()
+    
+    # Vincular turmas se fornecidas
+    if class_ids:
+        db = get_school_db(school_id)
+        # Limpar vínculos anteriores
+        db.execute('DELETE FROM teacher_classes WHERE teacher_id = ?', (teacher_id,))
+        # Adicionar novos vínculos
+        for class_id in class_ids:
+            db.execute('INSERT INTO teacher_classes (teacher_id, class_id) VALUES (?, ?)', (teacher_id, class_id))
+        db.commit()
+        db.close()
+    
     return jsonify({'success': True})
 
 @school_bp.route('/api/school/unlink-teacher', methods=['POST'])
@@ -1038,3 +1204,6 @@ def get_school_attendance(school_id=None):
     except Exception as e:
         print(f"Erro em get_school_attendance: {e}")
         return jsonify([])
+
+# Fim do arquivo (Duplicatas removidas)
+

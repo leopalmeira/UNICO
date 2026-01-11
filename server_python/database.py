@@ -12,6 +12,7 @@ def get_system_db():
     if db is None:
         if not os.path.exists(DB_DIR):
             os.makedirs(DB_DIR)
+        print(f"📂 Conectando ao banco: {SYSTEM_DB_PATH}")
         db = g._system_db = sqlite3.connect(SYSTEM_DB_PATH)
         db.row_factory = sqlite3.Row
     return db
@@ -251,6 +252,29 @@ def init_school_db(conn):
     )''')
 
     cur.execute('''
+    CREATE TABLE IF NOT EXISTS student_grades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER,
+        subject TEXT,
+        value REAL,
+        term TEXT,
+        teacher_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(student_id) REFERENCES students(id)
+    )''')
+
+    cur.execute('''
+    CREATE TABLE IF NOT EXISTS student_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER,
+        title TEXT,
+        content TEXT,
+        teacher_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(student_id) REFERENCES students(id)
+    )''')
+
+    cur.execute('''
     CREATE TABLE IF NOT EXISTS face_descriptors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         student_id INTEGER,
@@ -317,6 +341,44 @@ def init_school_db(conn):
         receipt_url TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(event_id) REFERENCES events(id),
+        FOREIGN KEY(student_id) REFERENCES students(id)
+    )''')
+
+    cur.execute('''
+    CREATE TABLE IF NOT EXISTS financial_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gateway_provider TEXT DEFAULT 'inter',
+        api_key TEXT, -- Usado para Asaas ou Legacy
+        client_id TEXT, -- Inter
+        client_secret TEXT, -- Inter
+        pix_key TEXT, -- Inter (Chave Pix da conta)
+        wallet_id TEXT,
+        webhook_token TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )''')
+
+    # Add columns if they don't exist
+    try:
+        cur.execute("ALTER TABLE financial_config ADD COLUMN client_id TEXT")
+        cur.execute("ALTER TABLE financial_config ADD COLUMN client_secret TEXT")
+        cur.execute("ALTER TABLE financial_config ADD COLUMN pix_key TEXT")
+        cur.execute("ALTER TABLE financial_config ADD COLUMN gateway_provider TEXT DEFAULT 'inter'")
+    except:
+        pass
+
+    cur.execute('''
+    CREATE TABLE IF NOT EXISTS invoices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER,
+        description TEXT,
+        amount REAL,
+        status TEXT DEFAULT 'PENDING', -- PENDING, RECEIVED, OVERDUE
+        payment_method TEXT, -- PIX, BOLETO, CREDIT_CARD
+        due_date DATE,
+        external_id TEXT, -- ID no Asaas
+        payment_url TEXT, -- Link para boleto/pix
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        paid_at DATETIME,
         FOREIGN KEY(student_id) REFERENCES students(id)
     )''')
     

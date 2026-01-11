@@ -445,6 +445,9 @@ export default function TeacherDashboard() {
                         <li className={`menu-item ${activeTab === 'students' ? 'active' : ''}`} onClick={() => { setActiveTab('students'); setMobileMenuOpen(false); }}>
                             <Users size={20} /> <span>Alunos</span>
                         </li>
+                        <li className={`menu-item ${activeTab === 'academic' ? 'active' : ''}`} onClick={() => { setActiveTab('academic'); setMobileMenuOpen(false); }}>
+                            <BookOpen size={20} /> <span>Acadêmico</span>
+                        </li>
                         <li className={`menu-item ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => { setActiveTab('messages'); setMobileMenuOpen(false); }}>
                             <Bell size={20} /> <span>Mensagens</span>
                             {unreadCount > 0 && <span className="menu-badge">{unreadCount}</span>}
@@ -639,6 +642,14 @@ export default function TeacherDashboard() {
                             lastSeatingChange={lastSeatingChange}
                             daysSinceLastSeating={daysSinceLastSeating}
                             onShuffle={shuffleSeats}
+                        />
+                    )}
+
+                    {/* ACADÊMICO */}
+                    {activeTab === 'academic' && (
+                        <AcademicTab
+                            students={students}
+                            classId={selectedClass?.id}
                         />
                     )}
 
@@ -1254,6 +1265,262 @@ function StudentReportModal({ student, onClose, pollResults, emotions }) {
                 <button className="btn btn-primary" onClick={onClose} style={{ width: '100%' }}>
                     Fechar
                 </button>
+            </div>
+        </div>
+    );
+}
+
+function AcademicTab({ students, classId }) {
+    const [subTab, setSubTab] = useState('grades');
+    const [selectedStudentId, setSelectedStudentId] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    // Grade Form
+    const [gradeData, setGradeData] = useState({ subject: '', value: '', term: '1º Bimestre' });
+
+    // Report Form
+    const [reportData, setReportData] = useState({ title: '', content: '' });
+
+    const handleSaveGrade = async (e) => {
+        e.preventDefault();
+        if (!selectedStudentId) return alert('Selecione um aluno');
+        setLoading(true);
+        try {
+            await api.post('/teacher/grades', {
+                student_id: selectedStudentId,
+                subject: gradeData.subject,
+                value: gradeData.value,
+                term: gradeData.term,
+                class_id: classId
+            });
+            alert('Nota salva com sucesso!');
+            setGradeData(prev => ({ ...prev, value: '' }));
+        } catch (err) {
+            console.error(err);
+            alert('Erro ao salvar nota.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSaveReport = async (e) => {
+        e.preventDefault();
+        if (!selectedStudentId) return alert('Selecione um aluno');
+        setLoading(true);
+        try {
+            await api.post('/teacher/reports', {
+                student_id: selectedStudentId,
+                title: reportData.title,
+                content: reportData.content,
+                class_id: classId
+            });
+            alert('Relatório salvo com sucesso!');
+            setReportData({ title: '', content: '' });
+        } catch (err) {
+            console.error(err);
+            alert('Erro ao salvar relatório.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="fade-in">
+            <div className="content-header">
+                <div className="page-title">
+                    <h1>Acadêmico</h1>
+                    <div className="page-subtitle">Lançamento de notas e relatórios</div>
+                </div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '20px' }}>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                    <button
+                        className={`btn ${subTab === 'grades' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setSubTab('grades')}
+                    >
+                        Lançar Notas
+                    </button>
+                    <button
+                        className={`btn ${subTab === 'reports' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setSubTab('reports')}
+                        style={{
+                            background: subTab === 'reports' ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+                            color: subTab === 'reports' ? 'white' : 'var(--text-secondary)'
+                        }}
+                    >
+                        Criar Relatórios
+                    </button>
+                    <button
+                        className={`btn ${subTab === 'exams' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setSubTab('exams')}
+                        style={{
+                            background: subTab === 'exams' ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+                            color: subTab === 'exams' ? 'white' : 'var(--text-secondary)'
+                        }}
+                    >
+                        Corrigir Provas
+                    </button>
+                </div>
+
+                <div className="form-group" style={{ maxWidth: '400px', marginBottom: '20px' }}>
+                    <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-secondary)' }}>Selecione o Aluno</label>
+                    <select
+                        className="form-control"
+                        value={selectedStudentId}
+                        onChange={(e) => setSelectedStudentId(e.target.value)}
+                        style={{
+                            width: '100%',
+                            padding: '10px',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid var(--border)',
+                            color: 'var(--text-primary)',
+                            borderRadius: '8px'
+                        }}
+                    >
+                        <option value="">-- Selecione --</option>
+                        {students.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                    </select>
+                </div>
+
+                {subTab === 'grades' && (
+                    <form onSubmit={handleSaveGrade} style={{ maxWidth: '500px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-secondary)' }}>Matéria</label>
+                                <input
+                                    type="text"
+                                    required
+                                    className="form-control"
+                                    placeholder="Ex: Matemática"
+                                    value={gradeData.subject}
+                                    onChange={e => setGradeData({ ...gradeData, subject: e.target.value })}
+                                    style={{
+                                        width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)',
+                                        border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: '8px'
+                                    }}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-secondary)' }}>Nota (0-10)</label>
+                                <input
+                                    type="number"
+                                    required
+                                    step="0.1" max="10" min="0"
+                                    className="form-control"
+                                    placeholder="Ex: 8.5"
+                                    value={gradeData.value}
+                                    onChange={e => setGradeData({ ...gradeData, value: e.target.value })}
+                                    style={{
+                                        width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)',
+                                        border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: '8px'
+                                    }}
+                                />
+                            </div>
+                        </div>
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-secondary)' }}>Bimestre/Período</label>
+                            <select
+                                className="form-control"
+                                value={gradeData.term}
+                                onChange={e => setGradeData({ ...gradeData, term: e.target.value })}
+                                style={{
+                                    width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: '8px'
+                                }}
+                            >
+                                <option>1º Bimestre</option>
+                                <option>2º Bimestre</option>
+                                <option>3º Bimestre</option>
+                                <option>4º Bimestre</option>
+                                <option>Recuperação</option>
+                            </select>
+                        </div>
+                        <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%', padding: '12px' }}>
+                            {loading ? 'Salvando...' : 'Salvar Nota'}
+                        </button>
+                    </form>
+                )}
+
+                {subTab === 'reports' && (
+                    <form onSubmit={handleSaveReport} style={{ maxWidth: '600px' }}>
+                        <div style={{ marginBottom: '15px' }}>
+                            <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-secondary)' }}>Título do Relatório</label>
+                            <input
+                                type="text"
+                                required
+                                className="form-control"
+                                placeholder="Ex: Comportamento em aula"
+                                value={reportData.title}
+                                onChange={e => setReportData({ ...reportData, title: e.target.value })}
+                                style={{
+                                    width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: '8px'
+                                }}
+                            />
+                        </div>
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-secondary)' }}>Conteúdo</label>
+                            <textarea
+                                required
+                                rows={6}
+                                className="form-control"
+                                placeholder="Descreva o desempenho ou comportamento do aluno..."
+                                value={reportData.content}
+                                onChange={e => setReportData({ ...reportData, content: e.target.value })}
+                                style={{
+                                    width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: '8px', resize: 'vertical'
+                                }}
+                            />
+                        </div>
+                        <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%', padding: '12px' }}>
+                            {loading ? 'Salvando...' : 'Salvar Relatório'}
+                        </button>
+                    </form>
+                )}
+
+                {subTab === 'exams' && (
+                    <div style={{ maxWidth: '600px', animation: 'fadeIn 0.3s ease-in-out' }}>
+                        <div style={{ padding: '20px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '12px', marginBottom: '20px' }}>
+                            <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px', color: '#fff' }}>
+                                <span>🤖</span> Correção Automática com IA
+                            </h3>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '15px' }}>
+                                Envie uma foto da prova ou gabarito para correção automática e lançamento de notas.
+                            </p>
+
+                            <div style={{
+                                border: '2px dashed var(--border)',
+                                borderRadius: '12px',
+                                padding: '40px',
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                background: 'rgba(255,255,255,0.02)',
+                                transition: 'all 0.2s'
+                            }}
+                                onMouseOver={e => e.currentTarget.style.borderColor = 'var(--primary)'}
+                                onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                                onClick={() => alert('Simulação: Abrindo câmera/upload...')}
+                            >
+                                <div style={{ fontSize: '48px', marginBottom: '15px', color: 'var(--primary)' }}>📸</div>
+                                <div style={{ fontWeight: '600', marginBottom: '5px', color: 'var(--text-primary)' }}>Clique para enviar a prova</div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>JPG, PNG ou PDF (Máx. 5MB)</div>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <button className="btn btn-ghost" style={{ border: '1px solid var(--border)' }} onClick={() => alert('Em breve')}>
+                                Ver Histórico
+                            </button>
+                            <button className="btn btn-primary" onClick={() => alert('Simulação: Prova enviada para correção!\nO sistema processará as respostas.')}>
+                                Iniciar Correção em Lote
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

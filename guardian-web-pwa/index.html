@@ -8,6 +8,26 @@
     <title>EduFocus Responsáveis</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary: #2563eb;
+            /* Blue 600 */
+            --primary-dark: #1e40af;
+            /* Blue 800 */
+            --bg-body: #f1f5f9;
+            /* Slate 100 */
+            --surface: #ffffff;
+            --text-main: #0f172a;
+            /* Slate 900 */
+            --text-secondary: #64748b;
+            /* Slate 500 */
+            --border: #e2e8f0;
+            /* Slate 200 */
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -17,71 +37,94 @@
 
         body {
             font-family: 'Inter', sans-serif;
-            background: #fafafa;
+            background: var(--bg-body);
+            color: var(--text-main);
             min-height: 100vh;
-            padding-bottom: 70px;
+            padding-bottom: 80px;
+            /* Space for nav */
         }
 
         .container {
-            max-width: 440px;
+            max-width: 480px;
+            /* Slightly wider */
             margin: 0 auto;
-            background: white;
+            background: var(--bg-body);
+            min-height: 100vh;
+            position: relative;
         }
 
-        /* Header */
+        /* Header Professional */
         .header {
-            background: #6366f1;
-            padding: 16px 20px;
+            background: var(--text-main);
+            /* Dark Slate */
+            padding: 24px 24px 32px;
+            /* Taller header */
             color: white;
+            border-bottom-left-radius: 24px;
+            border-bottom-right-radius: 24px;
+            box-shadow: var(--shadow);
+            position: relative;
+            z-index: 10;
         }
 
         .header-greeting {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 2px;
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            letter-spacing: -0.5px;
         }
 
         .header-subtitle {
             font-size: 13px;
-            opacity: 0.85;
+            color: #94a3b8;
+            /* Slate 400 */
+            font-weight: 500;
         }
 
         /* Content */
         .content {
-            padding: 16px;
+            padding: 20px;
+            margin-top: -10px;
+            /* Pull up to overlap header slightly if needed, or 0 */
+            position: relative;
+            z-index: 20;
         }
 
-        /* Child Card */
+        /* Cards */
+        .card,
+        .child-card,
+        .event-card,
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
         .child-card {
-            background: white;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 12px;
-            margin-bottom: 10px;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 16px;
         }
 
         .child-avatar {
-            width: 44px;
-            height: 44px;
+            width: 50px;
+            height: 50px;
             border-radius: 50%;
-            background: #6366f1;
+            background: #eff6ff;
+            /* Blue 50 */
+            color: var(--primary);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
-            color: white;
-            font-weight: 600;
+            font-size: 18px;
+            font-weight: 700;
             flex-shrink: 0;
-        }
-
-        .child-avatar img {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            object-fit: cover;
+            border: 2px solid white;
+            box-shadow: 0 0 0 2px var(--primary);
         }
 
         .child-info {
@@ -89,68 +132,255 @@
         }
 
         .child-name {
-            font-size: 14px;
-            font-weight: 600;
-            color: #111827;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
             margin-bottom: 2px;
         }
 
         .child-details {
-            font-size: 12px;
-            color: #6b7280;
+            font-size: 13px;
+            color: var(--text-secondary);
         }
 
-        /* Add Button */
+        /* Buttons */
+        .btn-primary,
         .add-btn {
-            background: #6366f1;
+            background: var(--primary);
             color: white;
             border: none;
-            border-radius: 10px;
-            padding: 12px;
+            border-radius: var(--radius-md);
+            padding: 14px;
             font-size: 14px;
             font-weight: 600;
             width: 100%;
             cursor: pointer;
+            box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);
+            transition: all 0.2s;
         }
 
-        /* Bottom Navigation */
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+
+        /* Nav */
         .bottom-nav {
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
-            background: white;
-            border-top: 1px solid #e5e7eb;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            border-top: 1px solid var(--border);
             display: flex;
             justify-content: space-around;
-            padding: 8px 0 12px;
-            max-width: 440px;
+            padding: 10px 0 20px;
+            /* Safe area bottom */
+            max-width: 480px;
             margin: 0 auto;
+            z-index: 100;
+            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05);
         }
 
         .nav-item {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 4px;
+            gap: 5px;
+            padding: 8px;
+            color: #94a3b8;
             cursor: pointer;
-            padding: 4px 12px;
-            color: #9ca3af;
-            transition: color 0.2s;
+            transition: all 0.2s;
+            position: relative;
         }
 
         .nav-item.active {
-            color: #6366f1;
+            color: var(--primary);
+        }
+
+        .nav-item.active .nav-icon {
+            transform: translateY(-2px);
+        }
+
+        .nav-item.active::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            width: 20px;
+            height: 3px;
+            background: var(--primary);
+            border-radius: 0 0 4px 4px;
         }
 
         .nav-icon {
-            font-size: 20px;
+            font-size: 22px;
+            transition: transform 0.2s;
         }
 
         .nav-label {
             font-size: 10px;
-            font-weight: 500;
+            font-weight: 600;
         }
+
+        /* Academic Tabs */
+        .tabs-header {
+            display: flex;
+            background: var(--surface);
+            padding: 4px;
+            border-radius: var(--radius-md);
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Professional Child Card Styles */
+        .child-card-prof {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            position: relative;
+            overflow: hidden;
+            /* Contain children */
+        }
+
+        .child-card-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .child-avatar-prof {
+            width: 60px !important;
+            height: 60px !important;
+            min-width: 60px !important;
+            border-radius: 50%;
+            background: #eff6ff;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: 700;
+            flex-shrink: 0;
+            border: 3px solid white;
+            box-shadow: 0 0 0 2px var(--primary);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .child-avatar-prof img {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover;
+            display: block;
+        }
+
+        .child-info-prof {
+            flex: 1;
+            min-width: 0;
+            /* Text truncation fix */
+        }
+
+        .child-name-prof {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 4px;
+            line-height: 1.2;
+        }
+
+        .child-details-prof {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .btn-msg-prof {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+            padding: 5px;
+            flex-shrink: 0;
+        }
+
+        .btn-msg-prof:hover {
+            opacity: 1;
+        }
+
+        .btn-pickup {
+            width: 100%;
+            background: #cbd5e1;
+            /* Slate 300 - Disabled state */
+            color: #475569;
+            font-weight: 600;
+            font-size: 15px;
+            padding: 14px;
+            border-radius: var(--radius-md);
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: not-allowed;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-pickup:not(:disabled) {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            transform: translateY(0);
+        }
+
+        .btn-pickup:not(:disabled):active {
+            transform: translateY(2px);
+        }
+
+        .btn-remote-pickup {
+            width: 100%;
+            background: #fef2f2;
+            color: #ef4444;
+            border: 1px solid #fee2e2;
+            padding: 12px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+
 
         /* Empty State */
         .empty {
@@ -656,6 +886,37 @@
             display: none !important;
         }
 
+        /* Logout Button */
+        .logout-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.3s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(220, 38, 38, 1);
+            transform: scale(1.05);
+        }
+
+        .logout-btn:active {
+            transform: scale(0.95);
+        }
+
+
         /* Calendar Styles */
         .calendar-grid {
             display: grid;
@@ -905,53 +1166,111 @@
             </div>
         </div>
 
-        <!-- Reports Screen -->
-        <div id="reportsScreen" class="hidden">
+        <!-- Academic Screen (Merged Reports, Grades, Notes) -->
+        <div id="academicScreen" class="hidden">
             <div class="header">
-                <h1 class="header-greeting">Relatórios</h1>
-                <p class="header-subtitle">Frequência Escolar</p>
+                <h1 class="header-greeting">Acadêmico</h1>
+                <p class="header-subtitle">Acompanhamento Escolar</p>
             </div>
             <div class="content">
-                <div class="form-group" style="margin-bottom: 20px;">
-                    <label class="label">Selecione o Filho</label>
-                    <select id="reportStudentSelect" class="input" onchange="loadStudentReport()">
-                        <!-- Options populated via JS -->
-                    </select>
+
+                <div class="tabs-header">
+                    <div class="tab-btn active" id="tabBtnAttendance" onclick="switchAcademicTab('attendance')">
+                        Frequência</div>
+                    <div class="tab-btn" id="tabBtnGrades" onclick="switchAcademicTab('grades')">Notas</div>
+                    <div class="tab-btn" id="tabBtnReports" onclick="switchAcademicTab('reports')">Relatórios</div>
                 </div>
 
-                <!-- Calendar Controls -->
-                <div
-                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: white; padding: 10px; border-radius: 12px; border: 1px solid #e5e7eb;">
-                    <button class="btn-icon" onclick="changeReportMonth(-1)">◀</button>
-                    <div style="text-align: center;">
-                        <span id="reportMonthLabel" style="font-size: 16px; font-weight: 600; display: block;">-</span>
-                        <span id="reportYearLabel" style="font-size: 12px; color: #6b7280;">-</span>
+                <!-- ATTENDANCE TAB -->
+                <div id="tabAttendanceContent">
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label class="label">Filho</label>
+                        <select id="reportStudentSelect" class="input" onchange="loadReportStudent(this.value)">
+                            <option value="">Selecione...</option>
+                        </select>
                     </div>
-                    <button class="btn-icon" onclick="changeReportMonth(1)">▶</button>
+
+                    <div class="stats-grid" id="reportStats">
+                        <div class="stat-card">
+                            <div class="stat-icon">✅</div>
+                            <div class="stat-value" id="statPresent">0</div>
+                            <div class="stat-label">Presenças</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">❌</div>
+                            <div class="stat-value" id="statAbsent">0</div>
+                            <div class="stat-label">Faltas</div>
+                        </div>
+                    </div>
+
+                    <!-- Calendar Controls -->
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: white; padding: 10px; border-radius: 12px; border: 1px solid #e5e7eb;">
+                        <button class="btn-icon" onclick="changeReportMonth(-1)">◀</button>
+                        <div style="text-align: center;">
+                            <span id="reportMonthLabel"
+                                style="font-size: 16px; font-weight: 600; display: block;">-</span>
+                            <span id="reportYearLabel" style="font-size: 12px; color: #6b7280;">-</span>
+                        </div>
+                        <button class="btn-icon" onclick="changeReportMonth(1)">▶</button>
+                    </div>
+
+                    <!-- Calendar Grid -->
+                    <div class="calendar-grid">
+                        <div class="calendar-header">D</div>
+                        <div class="calendar-header">S</div>
+                        <div class="calendar-header">T</div>
+                        <div class="calendar-header">Q</div>
+                        <div class="calendar-header">Q</div>
+                        <div class="calendar-header">S</div>
+                        <div class="calendar-header">S</div>
+                        <div id="calendarDays" style="display: contents;"></div>
+                    </div>
+
+                    <!-- Legend -->
+                    <div
+                        style="display: flex; gap: 20px; justify-content: center; margin-top: 20px; padding: 15px; background: white; border-radius: 12px; border: 1px solid #e5e7eb;">
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
+                            <div style="width: 16px; height: 16px; background: #d1fae5; border-radius: 4px;"></div>
+                            Presente
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
+                            <div style="width: 16px; height: 16px; background: #fee2e2; border-radius: 4px;"></div>
+                            Ausente
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Calendar Grid -->
-                <div class="calendar-grid">
-                    <div class="calendar-header">D</div>
-                    <div class="calendar-header">S</div>
-                    <div class="calendar-header">T</div>
-                    <div class="calendar-header">Q</div>
-                    <div class="calendar-header">Q</div>
-                    <div class="calendar-header">S</div>
-                    <div class="calendar-header">S</div>
-                    <div id="calendarDays" style="display: contents;"></div>
+                <!-- GRADES TAB -->
+                <div id="tabGradesContent" class="hidden">
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label class="label">Filho</label>
+                        <select id="gradesStudentSelect" class="input" onchange="loadGrades(this.value)">
+                            <option value="">Selecione...</option>
+                        </select>
+                    </div>
+                    <div id="gradesList">
+                        <div style="text-align:center; padding:40px; color:var(--text-secondary);">
+                            Carregando notas...
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Legend -->
-                <div
-                    style="display: flex; gap: 20px; justify-content: center; margin-top: 20px; padding: 15px; background: white; border-radius: 12px; border: 1px solid #e5e7eb;">
-                    <div style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
-                        <div style="width: 16px; height: 16px; background: #d1fae5; border-radius: 4px;"></div> Presente
+                <!-- REPORTS TAB -->
+                <div id="tabReportsContent" class="hidden">
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label class="label">Filho</label>
+                        <select id="reportsStudentSelect" class="input" onchange="loadReports(this.value)">
+                            <option value="">Selecione...</option>
+                        </select>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
-                        <div style="width: 16px; height: 16px; background: #fee2e2; border-radius: 4px;"></div> Ausente
+                    <div id="reportsList">
+                        <div style="text-align:center; padding:40px; color:var(--text-secondary);">
+                            Carregando relatórios...
+                        </div>
                     </div>
                 </div>
+
             </div>
         </div>
 
@@ -977,7 +1296,7 @@
                 <h1 class="header-greeting">Mensagens</h1>
                 <p class="header-subtitle">Converse com a escola</p>
             </div>
-            <div class="content" style="padding: 0;">
+            <div class="content" style="padding: 40px 16px 20px 16px;">
                 <div id="chatList">
                     <!-- Populated via JS -->
                 </div>
@@ -1018,6 +1337,28 @@
                 </button>
 
                 <input type="file" id="fileInput" hidden onchange="handleFileSelect(this)">
+            </div>
+        </div>
+
+        <!-- Financial Screen -->
+        <div id="financialScreen" class="hidden">
+            <div class="header">
+                <h1 class="header-greeting">Pagamentos</h1>
+                <p class="header-subtitle">Mensalidades e Taxas</p>
+            </div>
+            <div class="content">
+                <div id="financialList">
+                    <!-- Invoices will appear here -->
+                    <div style="text-align: center; padding: 40px; color: #9ca3af;">
+                        Carregando...
+                    </div>
+                </div>
+
+                <div id="financialEmpty" class="hidden empty">
+                    <div class="empty-icon">💸</div>
+                    <p class="empty-title">Tudo em dia!</p>
+                    <p class="empty-text">Nenhuma cobrança pendente encontrada.</p>
+                </div>
             </div>
         </div>
 
@@ -1093,13 +1434,17 @@
             <div class="nav-icon">🏠</div>
             <div class="nav-label">Início</div>
         </div>
-        <div class="nav-item" onclick="navigate('reports')">
-            <div class="nav-icon">📊</div>
-            <div class="nav-label" style="line-height:1.1; font-size:10px;">Frequência<br>Escolar</div>
+        <div class="nav-item" onclick="navigate('academic')">
+            <div class="nav-icon">🎓</div>
+            <div class="nav-label">Acadêmico</div>
         </div>
         <div class="nav-item" onclick="navigate('notifications')">
             <div class="nav-icon">📅</div>
             <div class="nav-label">Eventos</div>
+        </div>
+        <div class="nav-item" onclick="navigate('financial')">
+            <div class="nav-icon">💲</div>
+            <div class="nav-label">Pagamentos</div>
         </div>
         <div class="nav-item" onclick="navigate('messages')">
             <div class="nav-icon">💬</div>
@@ -1107,10 +1452,12 @@
         </div>
         <div class="nav-item" onclick="navigate('settings')">
             <div class="nav-icon">⚙️</div>
-            <div class="nav-label">Conta</div>
+            <div class="nav-label">Configurações</div>
         </div>
     </div>
     <script>
+        console.log('🚀 Guardian App JavaScript carregado!');
+
         // Desbloquear AudioContext com interação do usuário (obrigatório em navegadores modernos)
         window.audioCtxGlobal = null;
         document.addEventListener('click', () => {
@@ -1140,6 +1487,7 @@
         let chatPollInterval = null;
         let mediaRecorder = null;
         let audioChunks = [];
+        let currentAttendanceData = [];
 
         window.addEventListener('load', () => {
             const token = localStorage.getItem('token');
@@ -1575,7 +1923,7 @@
                 eventsPollingInterval = null;
             }
             // Ocultar todas as telas
-            const screens = ['loginScreen', 'registerScreen', 'homeScreen', 'linkScreen', 'reportsScreen', 'notificationsScreen', 'messagesScreen', 'settingsScreen', 'chatScreen'];
+            const screens = ['loginScreen', 'registerScreen', 'homeScreen', 'linkScreen', 'academicScreen', 'notificationsScreen', 'messagesScreen', 'settingsScreen', 'chatScreen', 'financialScreen', 'reportsScreen'];
             screens.forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.add('hidden');
@@ -1590,39 +1938,39 @@
             if (page === 'home') {
                 document.getElementById('homeScreen').classList.remove('hidden');
                 bottomNav.classList.remove('hidden');
-                navItems[0].classList.add('active');
+                if (navItems[0]) navItems[0].classList.add('active');
                 loadChildren();
             }
-            else if (page === 'reports') {
-                document.getElementById('reportsScreen').classList.remove('hidden');
+            else if (page === 'academic' || page === 'reports') {
+                document.getElementById('academicScreen').classList.remove('hidden');
                 bottomNav.classList.remove('hidden');
-                navItems[1].classList.add('active');
-                loadReportScreen();
+                if (navItems[1]) navItems[1].classList.add('active');
+                // Load default tab: Attendance
+                switchAcademicTab('attendance');
             }
             else if (page === 'notifications') {
                 document.getElementById('notificationsScreen').classList.remove('hidden');
                 bottomNav.classList.remove('hidden');
-                navItems[2].classList.add('active');
-                console.log('📌 Navegando para Eventos...');
-
-                // Carregar eventos inicialmente
-                if (typeof loadEventsAndNotifications === 'function') {
-                    loadEventsAndNotifications();
-                }
-
-                // Iniciar SSE (Server-Sent Events) para atualizações em tempo real
+                if (navItems[2]) navItems[2].classList.add('active');
+                if (typeof loadEventsAndNotifications === 'function') loadEventsAndNotifications();
                 startEventsSSE();
+            }
+            else if (page === 'financial') {
+                document.getElementById('financialScreen').classList.remove('hidden');
+                bottomNav.classList.remove('hidden');
+                if (navItems[3]) navItems[3].classList.add('active');
+                loadFinancial();
             }
             else if (page === 'messages') {
                 document.getElementById('messagesScreen').classList.remove('hidden');
                 bottomNav.classList.remove('hidden');
-                navItems[3].classList.add('active');
+                if (navItems[4]) navItems[4].classList.add('active');
                 loadChatList();
             }
             else if (page === 'settings') {
                 document.getElementById('settingsScreen').classList.remove('hidden');
                 bottomNav.classList.remove('hidden');
-                navItems[4].classList.add('active');
+                if (navItems[5]) navItems[5].classList.add('active');
                 if (typeof loadSettings === 'function') loadSettings();
             }
             else if (page === 'link') {
@@ -1632,16 +1980,383 @@
             }
         }
 
+        async function loadFinancial() {
+            const listDiv = document.getElementById('financialList');
+            const emptyDiv = document.getElementById('financialEmpty');
+
+            listDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: #9ca3af;">Carregando cobranças...</div>';
+            emptyDiv.classList.add('hidden');
+
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(`${API_URL}/guardian/invoices`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!res.ok) throw new Error('Erro ao buscar faturas');
+
+                const data = await res.json();
+                const invoices = data.invoices || [];
+
+                if (invoices.length === 0) {
+                    listDiv.innerHTML = '';
+                    emptyDiv.classList.remove('hidden');
+                    return;
+                }
+
+                renderInvoices(invoices);
+            } catch (e) {
+                console.error(e);
+                listDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#ef4444;">Erro ao carregar pagamentos.</div>';
+            }
+        }
+
+        function renderInvoices(invoices) {
+            const listDiv = document.getElementById('financialList');
+
+            // Mapeamento de Status
+            const statusMap = {
+                'pending': { label: 'Pendente', color: '#f59e0b', bg: '#fef3c7' },
+                'paid': { label: 'Pago', color: '#10b981', bg: '#ecfdf5' },
+                'overdue': { label: 'Vencido', color: '#ef4444', bg: '#fee2e2' },
+                'cancelled': { label: 'Cancelado', color: '#9ca3af', bg: '#f3f4f6' }
+            };
+
+            listDiv.innerHTML = invoices.map(inv => {
+                const st = statusMap[inv.status] || statusMap['pending'];
+                const dueDate = new Date(inv.due_date);
+                const isOverdue = inv.status === 'pending' && new Date() > dueDate;
+
+                const finalStatus = isOverdue ? statusMap['overdue'] : st;
+
+                return `
+                    <div class="event-card" style="border-left: 4px solid ${finalStatus.color};">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                            <span style="font-size:12px; color:#6b7280; text-transform:uppercase; font-weight:600;">Due: ${dueDate.toLocaleDateString('pt-BR')}</span>
+                            <span style="background:${finalStatus.bg}; color:${finalStatus.color}; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700;">${finalStatus.label}</span>
+                        </div>
+                        
+                        <h3 style="font-size:16px; font-weight:700; color:#111827; margin-bottom:4px;">${inv.description}</h3>
+                        <div style="font-size:13px; color:#6b7280; margin-bottom:12px;">${inv.student_name} • ${inv.school_name}</div>
+                        
+                        <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #f3f4f6; padding-top:12px;">
+                            <span style="font-size:18px; font-weight:700; color:#111827;">R$ ${parseFloat(inv.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            
+                            ${inv.payment_url && inv.status === 'pending' ? `
+                                <a href="${inv.payment_url}" target="_blank" 
+                                   style="background:#6366f1; color:white; text-decoration:none; padding:8px 16px; border-radius:8px; font-size:13px; font-weight:600;">
+                                   Pagar Agora
+                                </a>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+
+
+
+        // --- ACADEMIC ---
+        // currentReportDate variable is already declared globally at line 1448
+        // currentReportDate = new Date(); -- Do not reset here if we want to keep state across tab switches, or do reset? 
+        // Let's reset it to be safe, but without 'let'
+        currentReportDate = new Date();
+        // let currentAttendanceData = []; -- This was fine if not declared before, but cleaner to declare it near usage or global.
+
+
+        function switchAcademicTab(tab) {
+            // Update Tab Buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            if (tab === 'attendance') document.getElementById('tabBtnAttendance').classList.add('active');
+            if (tab === 'grades') document.getElementById('tabBtnGrades').classList.add('active');
+            if (tab === 'reports') document.getElementById('tabBtnReports').classList.add('active');
+
+            // Hide all contents
+            document.getElementById('tabAttendanceContent').classList.add('hidden');
+            document.getElementById('tabGradesContent').classList.add('hidden');
+            document.getElementById('tabReportsContent').classList.add('hidden');
+
+            // Show selected
+            if (tab === 'attendance') {
+                document.getElementById('tabAttendanceContent').classList.remove('hidden');
+                populateAcademicSelects();
+                // Force load if student selected
+                const sel = document.getElementById('reportStudentSelect');
+                if (sel && sel.value) loadReportStudent(sel.value);
+            } else if (tab === 'grades') {
+                document.getElementById('tabGradesContent').classList.remove('hidden');
+                populateAcademicSelects();
+            } else if (tab === 'reports') {
+                document.getElementById('tabReportsContent').classList.remove('hidden');
+                populateAcademicSelects();
+            }
+        }
+
+        function populateAcademicSelects() {
+            // Populate select boxes if they are empty
+            const selects = ['reportStudentSelect', 'gradesStudentSelect', 'reportsStudentSelect'];
+
+            selects.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && el.options.length <= 1 && myStudentsData.length > 0) {
+                    myStudentsData.forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = s.id;
+                        opt.textContent = s.name;
+                        el.appendChild(opt);
+                    });
+
+                    // Auto select first if available
+                    if (myStudentsData.length > 0) {
+                        el.value = myStudentsData[0].id;
+                        // Manually trigger for grades/reports listeners if attached
+                        el.dispatchEvent(new Event('change'));
+                    }
+                }
+            });
+        }
+
+        async function loadReportStudent(studentId) {
+            if (!studentId) return;
+
+            // Validate student
+            const student = myStudentsData.find(s => s.id == studentId);
+            if (!student) return;
+
+            // Update Labels
+            const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+            ];
+            document.getElementById('reportMonthLabel').textContent = monthNames[currentReportDate.getMonth()];
+            document.getElementById('reportYearLabel').textContent = currentReportDate.getFullYear();
+
+            // Fetch Data
+            const month = currentReportDate.getMonth() + 1;
+            const year = currentReportDate.getFullYear();
+            const schoolId = student.schoolId || student.school_id;
+
+            try {
+                const token = localStorage.getItem('token');
+                const url = `${API_URL}/guardian/student-attendance?schoolId=${schoolId}&studentId=${studentId}&month=${month}&year=${year}`;
+                const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await res.json(); // Array of {timestamp, type}
+
+                currentAttendanceData = data || [];
+                renderCalendar();
+                updateStats();
+
+            } catch (e) {
+                console.error("Erro ao carregar frequencia:", e);
+                currentAttendanceData = [];
+                renderCalendar();
+            }
+        }
+
+        function changeReportMonth(delta) {
+            currentReportDate.setMonth(currentReportDate.getMonth() + delta);
+            const sel = document.getElementById('reportStudentSelect');
+            if (sel && sel.value) loadReportStudent(sel.value);
+        }
+
+        function renderCalendar() {
+            const container = document.getElementById('calendarDays');
+            container.innerHTML = '';
+
+            const year = currentReportDate.getFullYear();
+            const month = currentReportDate.getMonth();
+
+            const firstDay = new Date(year, month, 1).getDay(); // 0 = Sunday
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            // Empty slots for previous month
+            for (let i = 0; i < firstDay; i++) {
+                container.innerHTML += `<div class="calendar-day day-empty"></div>`;
+            }
+
+            // Days
+            for (let d = 1; d <= daysInMonth; d++) {
+                // Check attendance
+                // Format YYYY-MM-DD to match
+                // We need to check if any record in currentAttendanceData matches this day
+                const checkDate = new Date(year, month, d);
+                // Simple string match YYYY-MM-DD
+                const yyyy = year;
+                const mm = String(month + 1).padStart(2, '0');
+                const dd = String(d).padStart(2, '0');
+                const dateStr = `${yyyy}-${mm}-${dd}`;
+
+                // Assume attendance record timestamp contains the date
+                const records = currentAttendanceData.filter(r => r.timestamp.startsWith(dateStr));
+
+                let className = 'day-neutral'; // Default (future or no info)
+
+                // Logic: 
+                // If date is in future: neutral/empty
+                // If date is past/today AND has 'arrival' -> Present
+                // If date is past/today AND NO 'arrival' -> Absent (Weekdays only?)
+
+                const isWeekend = (checkDate.getDay() === 0 || checkDate.getDay() === 6);
+                const isFuture = checkDate > new Date();
+
+                let isPresent = records.some(r => r.type === 'arrival');
+
+                if (!isFuture && !isWeekend) {
+                    if (isPresent) {
+                        className = 'day-present'; // defined in CSS
+                    } else {
+                        // Only mark absent if it's a weekday in the past
+                        // Simple logic: If today and no record yet, maybe not arrived. 
+                        // If stricly past day, absent.
+                        // Let's mark absent for simplicity
+                        className = 'day-absent';
+                    }
+                }
+
+                if (isFuture) className = '';
+
+                container.innerHTML += `
+                    <div class="calendar-day ${className}" style="${className === '' ? 'background: #f3f4f6; color: #9ca3af;' : ''}">
+                        ${d}
+                    </div>
+                `;
+            }
+        }
+
+        function updateStats() {
+            // Count unique days present in this month view
+            // Actually API returns records for this month. 
+            // We count distinct days with 'arrival'
+            const presentDays = new Set();
+            currentAttendanceData.forEach(r => {
+                if (r.type === 'arrival') {
+                    // Robusto para 'T' ou espaço
+                    const datePart = r.timestamp.replace('T', ' ').split(' ')[0];
+                    presentDays.add(datePart);
+                }
+            });
+
+            const presentCount = presentDays.size;
+
+            // Absent logic is tricky without knowing school days. 
+            // For now, count weekdays in past/today up to now minus present.
+            // Or just use 0 if we don't want to guess. 
+            // Better: Count days in the past (weekdays) that are NOT in presentDays.
+
+            let absentCount = 0;
+            const year = currentReportDate.getFullYear();
+            const month = currentReportDate.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const today = new Date();
+
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dt = new Date(year, month, d);
+                if (dt > today) break;
+                if (dt.getDay() === 0 || dt.getDay() === 6) continue; // Skip weekend
+
+                const yyyy = year;
+                const mm = String(month + 1).padStart(2, '0');
+                const dd = String(d).padStart(2, '0');
+                const dateStr = `${yyyy}-${mm}-${dd}`;
+
+                if (!presentDays.has(dateStr)) {
+                    absentCount++;
+                }
+            }
+
+            document.getElementById('statPresent').textContent = presentCount;
+            document.getElementById('statAbsent').textContent = absentCount;
+        }
+
+        async function loadGrades(studentId) {
+            if (!studentId) return;
+            const div = document.getElementById('gradesList');
+            div.innerHTML = '<div style="text-align:center; padding:20px;">Carregando...</div>';
+
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(`${API_URL}/guardian/grades`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+
+                // Filter by studentId locally since API returns all (or update API to filter)
+                // The API returns all for the guardian. We filter here.
+                const relevant = (data.grades || []).filter(g => g.student_id == studentId);
+
+                if (relevant.length === 0) {
+                    div.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary);">Nenhuma nota lançada.</div>';
+                    return;
+                }
+
+                div.innerHTML = relevant.map(g => `
+                    <div style="background:var(--surface); padding:16px; border-radius:12px; margin-bottom:10px; border:1px solid var(--border); box-shadow:var(--shadow);">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                            <span style="font-weight:700; color:var(--text-main);">${g.subject}</span>
+                            <span style="background:${g.value >= 6 ? '#dcfce7' : '#fee2e2'}; color:${g.value >= 6 ? '#166534' : '#991b1b'}; padding:2px 8px; border-radius:12px; font-weight:700; font-size:14px;">${g.value}</span>
+                        </div>
+                        <div style="font-size:12px; color:var(--text-secondary);">
+                            ${g.term} • ${g.teacher_name || 'Professor'} • ${new Date(g.created_at).toLocaleDateString()}
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (e) {
+                console.error(e);
+                div.innerHTML = 'Erro ao carregar notas.';
+            }
+        }
+
+        async function loadReports(studentId) {
+            if (!studentId) return;
+            const div = document.getElementById('reportsList');
+            div.innerHTML = '<div style="text-align:center; padding:20px;">Carregando...</div>';
+
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(`${API_URL}/guardian/reports`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+
+                const relevant = (data.reports || []).filter(r => r.student_id == studentId);
+
+                if (relevant.length === 0) {
+                    div.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary);">Nenhum relatório encontrado.</div>';
+                    return;
+                }
+
+                div.innerHTML = relevant.map(r => `
+                     <div style="background:var(--surface); padding:16px; border-radius:12px; margin-bottom:10px; border:1px solid var(--border); box-shadow:var(--shadow);">
+                        <div style="font-weight:700; color:var(--text-main); margin-bottom:5px;">${r.title}</div>
+                        <div style="font-size:14px; color:var(--text-secondary); margin-bottom:10px; line-height:1.5;">${r.content}</div>
+                        <div style="font-size:11px; color:#94a3b8; border-top:1px solid var(--border); padding-top:8px;">
+                           ${r.teacher_name || 'Coordenação'} • ${new Date(r.created_at).toLocaleDateString()}
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (e) {
+                div.innerHTML = 'Erro ao carregar relatórios.';
+            }
+        }
+
         function showLogin() {
-            const screens = ['loginScreen', 'registerScreen', 'homeScreen', 'linkScreen', 'reportsScreen', 'notificationsScreen', 'messagesScreen', 'settingsScreen'];
-            screens.forEach(id => document.getElementById(id).classList.add('hidden'));
+            const screens = ['loginScreen', 'registerScreen', 'homeScreen', 'linkScreen', 'academicScreen', 'notificationsScreen', 'messagesScreen', 'settingsScreen', 'chatScreen', 'financialScreen', 'reportsScreen'];
+            screens.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('hidden');
+            });
             document.getElementById('loginScreen').classList.remove('hidden');
             document.getElementById('bottomNav').classList.add('hidden');
         }
 
         function showRegister() {
-            const screens = ['loginScreen', 'registerScreen', 'homeScreen', 'linkScreen', 'reportsScreen', 'notificationsScreen', 'messagesScreen', 'settingsScreen'];
-            screens.forEach(id => document.getElementById(id).classList.add('hidden'));
+            const screens = ['loginScreen', 'registerScreen', 'homeScreen', 'linkScreen', 'academicScreen', 'notificationsScreen', 'messagesScreen', 'settingsScreen', 'chatScreen', 'financialScreen', 'reportsScreen'];
+            screens.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('hidden');
+            });
             document.getElementById('registerScreen').classList.remove('hidden');
         }
 
@@ -1957,16 +2672,18 @@
         }
 
         async function loadChildren() {
-            const token = localStorage.getItem('token');
             const div = document.getElementById('childrenList');
+            div.innerHTML = '<div style="text-align: center; padding: 20px;">Carregando...</div>';
 
             try {
+                const token = localStorage.getItem('token');
                 const res = await fetch(`${API_URL}/guardian/students`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
+                const responseData = await res.json();
+                const children = responseData.data?.students || [];
 
-                const data = await res.json();
-                const children = data.data?.students || [];
+                // Save globally for use in reports/grades dropdown
                 myStudentsData = children;
 
                 if (user) {
@@ -1987,38 +2704,39 @@
                 div.innerHTML = children.map(child => {
                     const hasCoords = child.latitude && child.longitude;
                     return `
-                        <div class="child-card" style="flex-direction: column; align-items: stretch; gap: 16px; padding: 16px;">
-                            <div style="display: flex; align-items: center; gap: 12px;">
-                                <div class="child-avatar">
-                                    ${child.photo_url ? `<img src="${child.photo_url}">` : child.name.charAt(0).toUpperCase()}
+                        <div class="child-card-prof">
+                            <div class="child-card-header">
+                                <div class="child-avatar-prof">
+                                    ${child.photo_url ? `<img src="${child.photo_url}" alt="${child.name}">` : child.name.charAt(0).toUpperCase()}
                                 </div>
-                                <div class="child-info">
-                                    <div class="child-name">${child.name}</div>
-                                    <div class="child-details">${child.class_name || 'Sem turma'} • ${child.school_name || ''}</div>
+                                <div class="child-info-prof">
+                                    <div class="child-name-prof">${child.name}</div>
+                                    <div class="child-details-prof">${child.class_name || 'Sem turma'} • ${child.school_name || ''}</div>
                                 </div>
+                                <button class="btn-msg-prof" onclick="openChatWithStudent(${child.id}, '${child.name}', '${child.school_id}', '${child.school_name}')" title="Mensagem">
+                                    💬
+                                </button>
                             </div>
                             
-                            <div class="pickup-container-${child.id}" style="margin-top: 4px;">
-                                <div id="dist-info-${child.id}" style="font-size: 12px; color: #6b7280; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                            <div class="pickup-container-${child.id}" style="margin-top: 16px;">
+                                <div id="dist-info-${child.id}" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; background: var(--bg-body); padding: 8px; border-radius: 8px;">
                                     ${hasCoords ? '<span>📍 Calculando distância...</span>' : '<span style="color: #9ca3af;">📍 Localização da escola não configurada</span>'}
                                 </div>
                                 
-                                <!-- Botão principal: só ativo quando próximo da escola -->
-                                <button id="pickup-btn-${child.id}" 
-                                        class="btn-primary" 
-                                        style="width: 100%; background: #94a3b8; font-size: 14px; padding: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 12px; opacity: 0.6; cursor: not-allowed;"
-                                        onclick="requestPickup(${child.id}, ${child.school_id})"
-                                        disabled>
-                                    🚗 Aguardando aproximação...
-                                </button>
-                                
-                                <!-- Botão secundário: autorizar de longe (outra pessoa buscar) -->
-                                <button id="remote-btn-${child.id}" 
-                                        class="btn-secondary" 
-                                        style="width: 100%; margin-top: 8px; font-size: 13px; padding: 12px; display: none; align-items: center; justify-content: center; gap: 8px; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2);"
-                                        onclick="requestRemotePickup(${child.id}, ${child.school_id}, '${child.name.replace(/'/g, "\\'")}')">
-                                    ⚠️ Autorizar de Longe (Outra Pessoa Buscar)
-                                </button>
+                                <div style="display: flex; gap: 8px; flex-direction: column;">
+                                    <button id="pickup-btn-${child.id}" 
+                                            class="btn-pickup" 
+                                            onclick="requestPickup(${child.id}, ${child.school_id})"
+                                            disabled>
+                                        <span class="btn-icon">🚗</span> Notificar Chegada
+                                    </button>
+                                    
+                                    <button id="remote-btn-${child.id}" 
+                                            class="btn-remote-pickup hidden" 
+                                            onclick="requestRemotePickup(${child.id}, ${child.school_id}, '${child.name.replace(/'/g, "\\'")}')">
+                                        ⚠️ Autorizar Terceiro
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -2537,17 +3255,17 @@
 
             empty.classList.add('hidden');
             list.innerHTML = myStudentsData.map(s => `
-                    <div class="chat-list-item" onclick="openChat(${s.id})" >
-                    <div class="child-avatar">
-                        ${s.photo_url ? `<img src="${s.photo_url}">` : s.name.charAt(0)}
+                <div class="child-card-prof" onclick="openChat(${s.id})" style="flex-direction: row; align-items: center; cursor: pointer; padding: 16px;">
+                    <div class="child-avatar-prof" style="width: 50px !important; height: 50px !important; min-width: 50px !important; font-size: 20px;">
+                        ${s.photo_url ? `<img src="${s.photo_url}" alt="${s.name}" style="width: 100% !important; height: 100% !important; object-fit: cover;">` : s.name.charAt(0).toUpperCase()}
                     </div>
-                    <div style="flex: 1;">
-                        <div class="child-name">${s.name}</div>
-                        <div class="child-details">${s.schoolName || 'Escola'}</div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div class="child-name-prof" style="font-size: 16px; margin-bottom: 2px;">${s.name}</div>
+                        <div class="child-details-prof">${s.school_name || 'Escola'}</div>
                     </div>
-                    <div style="font-size: 20px; color: #ddd;">›</div>
-                </div >
-                    `).join('');
+                    <div style="font-size: 20px; color: var(--text-secondary);">›</div>
+                </div>
+            `).join('');
         }
 
         async function openChat(studentId) {

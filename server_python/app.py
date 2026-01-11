@@ -45,6 +45,15 @@ app.register_blueprint(support_bp)
 app.register_blueprint(teacher_bp)
 app.register_blueprint(location_bp)
 app.register_blueprint(affiliates_bp)
+from routes.teacher_academic import teacher_bp as teacher_academic_bp
+app.register_blueprint(teacher_academic_bp)
+from routes.financial import financial_bp
+app.register_blueprint(financial_bp)
+from routes.saas_billing import saas_billing_bp
+app.register_blueprint(saas_billing_bp)
+
+from routes.employee_app import employee_bp
+app.register_blueprint(employee_bp)
 
 # Rota para servir Uploads
 UPLOAD_FOLDER_ROOT = os.path.join(os.getcwd(), 'uploads')

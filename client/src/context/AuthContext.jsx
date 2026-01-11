@@ -52,7 +52,7 @@ export const AuthProvider = ({ children }) => {
 
             console.log('✅ Usuário salvo no estado:', userData);
 
-            return { success: true };
+            return { success: true, role };
         } catch (error) {
             console.error('❌ Erro no login:', error.response?.data || error.message);
             return { success: false, message: error.response?.data?.message || 'Login failed' };

@@ -261,14 +261,18 @@ export default function EmployeeAttendancePanel({ schoolId }) {
                     const emp = employeeMap.get(record.employee_id);
                     const dateStr = new Date(record.timestamp).toISOString().split('T')[0];
 
-                    // Evitar duplicatas no mesmo dia
-                    if (!emp.records.some(r => r.date === dateStr)) {
-                        emp.records.push({
-                            date: dateStr,
-                            time: new Date(record.timestamp).toLocaleTimeString('pt-BR')
-                        });
+                    // Adicionar registro (permitir múltiplos por dia)
+                    // Se for o primeiro deste dia, incrementa daysPresent
+                    const isNewDay = !emp.records.some(r => r.date === dateStr);
+                    if (isNewDay) {
                         emp.daysPresent++;
                     }
+
+                    emp.records.push({
+                        date: dateStr,
+                        time: new Date(record.timestamp).toLocaleTimeString('pt-BR'),
+                        type: record.type
+                    });
                 }
             });
 
@@ -599,7 +603,22 @@ export default function EmployeeAttendancePanel({ schoolId }) {
                                         {record.employee_name}
                                     </div>
                                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                        {record.employee_role} • {new Date(record.timestamp).toLocaleTimeString('pt-BR')}
+                                        {record.type ? (
+                                            <span style={{
+                                                color: record.type === 'clock_in' ? '#10b981' :
+                                                    record.type === 'clock_out' ? '#ef4444' :
+                                                        '#f59e0b',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                {record.type === 'clock_in' ? 'Entrada' :
+                                                    record.type === 'lunch_out' ? 'Saída Almoço' :
+                                                        record.type === 'lunch_return' ? 'Volta Almoço' :
+                                                            record.type === 'clock_out' ? 'Saída' : 'Registro'}
+                                            </span>
+                                        ) : (
+                                            <span>Ponto</span>
+                                        )} • {new Date(record.timestamp).toLocaleTimeString('pt-BR')}
+                                        {record.photo_url && <span title="Biometria"> 📸</span>}
                                     </div>
                                 </div>
 
@@ -734,7 +753,13 @@ export default function EmployeeAttendancePanel({ schoolId }) {
                                                                     fontSize: '0.875rem'
                                                                 }}
                                                             >
-                                                                {new Date(record.date).getDate()}/{selectedMonth.getMonth() + 1} às {record.time}
+                                                                {(() => {
+                                                                    const label = record.type === 'clock_in' ? 'IN' :
+                                                                        record.type === 'clock_out' ? 'OUT' :
+                                                                            record.type === 'lunch_out' ? 'L-OUT' :
+                                                                                record.type === 'lunch_return' ? 'L-IN' : 'REG';
+                                                                    return `${new Date(record.date).getDate()}/${selectedMonth.getMonth() + 1} ${label} ${record.time}`;
+                                                                })()}
                                                             </div>
                                                         ))}
                                                     </div>

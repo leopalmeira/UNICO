@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, GraduationCap, ClipboardCheck, HelpCircle, FileText, BarChart3, MessageCircle, Menu, Camera, Clock, Calendar, Building2, Edit, Save, X } from 'lucide-react';
+import { Users, GraduationCap, ClipboardCheck, HelpCircle, FileText, BarChart3, MessageCircle, Menu, Camera, Clock, Calendar, Building2, Edit, Save, X, DollarSign } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import WhatsAppPanel from '../components/WhatsAppPanel'; // Manter caso queira voltar
 import SchoolCommunicationPanel from '../components/SchoolCommunicationPanel';
@@ -21,6 +21,9 @@ import SchoolPickupsManager from '../components/SchoolPickupsManager';
 import EmployeeAttendanceReport from '../components/EmployeeAttendanceReport';
 import AffiliatesPanel from '../components/AffiliatesPanel';
 import SchoolSelector from '../components/SchoolSelector';
+import FinancialPanel from '../components/FinancialPanel';
+import SchoolSaaSBilling from '../components/SchoolSaaSBilling';
+import OnboardingTour from '../components/OnboardingTour';
 import { useAuth } from '../context/AuthContext';
 
 export default function SchoolDashboard() {
@@ -66,6 +69,37 @@ export default function SchoolDashboard() {
         latitude: '',
         longitude: ''
     });
+
+    // Tour State
+    const [showTour, setShowTour] = useState(false);
+    const [isFirstVisit, setIsFirstVisit] = useState(false);
+
+    useEffect(() => {
+        // Lógica do Tour: Mostrar sempre durante os primeiros 30 dias de uso
+        const startDateStr = localStorage.getItem('tourStartDate');
+        let shouldShow = false;
+
+        if (!startDateStr) {
+            // Primeiro acesso: MARCA O INÍCIO DO PERÍODO DE 30 DIAS
+            localStorage.setItem('tourStartDate', new Date().toISOString());
+            setIsFirstVisit(true);
+            shouldShow = true;
+        } else {
+            // Verifica se ainda está dentro do período de 30 dias
+            const startDate = new Date(startDateStr);
+            const today = new Date();
+            const diffTime = Math.abs(today - startDate);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays <= 30) {
+                shouldShow = true;
+            }
+        }
+
+        if (shouldShow) {
+            setTimeout(() => setShowTour(true), 2000);
+        }
+    }, [user?.id]);
 
     useEffect(() => {
         document.body.classList.add('force-landscape');
@@ -170,6 +204,8 @@ export default function SchoolDashboard() {
         },
         { id: 'events', label: 'Eventos', icon: <Calendar size={20} /> },
         { id: 'messages', label: 'Mensagens', icon: <MessageCircle size={20} /> },
+        { id: 'financial', label: 'Financeiro (Pais)', icon: <DollarSign size={20} /> },
+        { id: 'saas-billing', label: 'Assinatura', icon: <FileText size={20} /> },
         {
             id: 'affiliates',
             label: 'Filiais',
@@ -247,6 +283,16 @@ export default function SchoolDashboard() {
         }));
     };
 
+    // Sync currentSchoolId with user.id once user loads (if not overridden)
+    useEffect(() => {
+        if (user?.id) {
+            const saved = localStorage.getItem('selectedSchoolId');
+            if (!saved) {
+                setCurrentSchoolId(user.id);
+            }
+        }
+    }, [user]);
+
     useEffect(() => {
         if (activeTab === 'teachers') {
             loadTeachers();
@@ -266,7 +312,7 @@ export default function SchoolDashboard() {
         if (activeTab === 'cameras') {
             loadCameras();
         }
-    }, [activeTab]);
+    }, [activeTab, currentSchoolId]);
 
     const loadCameras = async () => {
         try {
@@ -307,6 +353,11 @@ export default function SchoolDashboard() {
             setClasses(res.data);
         } catch (err) {
             console.error('Failed to load classes', err);
+            if (err.response?.status === 403) {
+                console.warn('Resetting school ID due to 403');
+                localStorage.removeItem('selectedSchoolId');
+                setCurrentSchoolId(schoolId);
+            }
         }
     };
 
@@ -334,6 +385,10 @@ export default function SchoolDashboard() {
             setTeachers(res.data);
         } catch (err) {
             console.error('Failed to load teachers', err);
+            if (err.response?.status === 403) {
+                localStorage.removeItem('selectedSchoolId');
+                setCurrentSchoolId(schoolId);
+            }
         }
     };
 
@@ -346,6 +401,10 @@ export default function SchoolDashboard() {
             setStudents(res.data);
         } catch (err) {
             console.error('Failed to load students', err);
+            if (err.response?.status === 403) {
+                localStorage.removeItem('selectedSchoolId');
+                setCurrentSchoolId(schoolId);
+            }
         }
     };
 
@@ -656,7 +715,33 @@ export default function SchoolDashboard() {
                                 <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1.5rem' }}>Vincular Novo Professor</h3>
 
                                 {!selectedTeacher ? (
-                                    <div style={{ display: 'flex', gap: '1rem' }}>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button
+                                            className="btn"
+                                            onClick={() => setShowTour(true)}
+                                            style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
+                                            title="Iniciar Tour Guiado"
+                                        >
+                                            <HelpCircle size={20} />
+                                            <span className="hidden-mobile">Ajuda</span>
+                                        </button>
+                                        <button className="btn" onClick={() => {
+                                            setEditSchoolData({
+                                                name: currentSchool?.name || '',
+                                                email: currentSchool?.email || '',
+                                                cnpj: currentSchool?.cnpj || '',
+                                                address: currentSchool?.address || '',
+                                                number: currentSchool?.number || '',
+                                                zip_code: currentSchool?.zip_code || '',
+                                            });
+                                            setIsEditSchoolModalOpen(true);
+                                        }}
+                                            style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
+                                            title="Editar Informações da Escola"
+                                        >
+                                            <Edit size={20} />
+                                            <span className="hidden-mobile">Editar Escola</span>
+                                        </button>
                                         <input
                                             className="input-field"
                                             placeholder="Email do professor"
@@ -739,7 +824,11 @@ export default function SchoolDashboard() {
                     <div className="fade-in">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                             <h1 style={{ fontSize: '2rem', fontWeight: '700' }}>Alunos</h1>
-                            <button className="btn btn-primary" onClick={() => setShowStudentForm(true)}>
+                            <button className="btn btn-primary" onClick={() => {
+                                console.log('🔄 Abrindo form de aluno e recarregando turmas...');
+                                loadClasses();
+                                setShowStudentForm(true);
+                            }}>
                                 Cadastrar Aluno
                             </button>
                         </div>
@@ -1043,6 +1132,18 @@ export default function SchoolDashboard() {
                 {activeTab === 'pickups' && (
                     <SchoolPickupsManager />
                 )}
+
+                {activeTab === 'financial' && (
+                    <div className="fade-in">
+                        <FinancialPanel schoolId={currentSchoolId} />
+                    </div>
+                )}
+
+                {activeTab === 'saas-billing' && (
+                    <div className="fade-in">
+                        <SchoolSaaSBilling schoolId={currentSchoolId} />
+                    </div>
+                )}
             </div>
 
             {/* Modal de Perfil do Aluno */}
@@ -1094,101 +1195,84 @@ export default function SchoolDashboard() {
 
             {/* Modal de Edição da Escola */}
             {isEditSchoolModalOpen && (
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: 'rgba(0,0,0,0.8)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 1000
-                }}>
-                    <div className="glass-panel" style={{ width: '100%', maxWidth: '600px', padding: '2rem', maxHeight: '90vh', overflowY: 'auto' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                            <h2 style={{ fontSize: '1.5rem', fontWeight: '700' }}>Editar Informações da Escola</h2>
-                            <button onClick={() => setIsEditSchoolModalOpen(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
-                                <X size={24} />
-                            </button>
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <h2>Editar Dados da Escola</h2>
+
+                        <div className="form-group">
+                            <label>Nome da Escola</label>
+                            <input
+                                className="input-field"
+                                value={editSchoolData.name}
+                                onChange={e => setEditSchoolData({ ...editSchoolData, name: e.target.value })}
+                            />
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Nome da Escola *</label>
-                                <input
-                                    className="input-field"
-                                    value={editSchoolData.name}
-                                    onChange={e => setEditSchoolData({ ...editSchoolData, name: e.target.value })}
-                                    placeholder="Nome da Escola"
-                                />
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Email *</label>
-                                    <input
-                                        className="input-field"
-                                        value={editSchoolData.email}
-                                        onChange={e => setEditSchoolData({ ...editSchoolData, email: e.target.value })}
-                                        placeholder="Email da Escola"
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>CNPJ</label>
-                                    <input
-                                        className="input-field"
-                                        value={editSchoolData.cnpj}
-                                        onChange={e => setEditSchoolData({ ...editSchoolData, cnpj: e.target.value })}
-                                        placeholder="00.000.000/0000-00"
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Endereço</label>
+                        <div className="form-group">
+                            <label>Email</label>
+                            <input
+                                className="input-field"
+                                value={editSchoolData.email}
+                                onChange={e => setEditSchoolData({ ...editSchoolData, email: e.target.value })}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>CNPJ</label>
+                            <input
+                                className="input-field"
+                                value={editSchoolData.cnpj}
+                                onChange={e => setEditSchoolData({ ...editSchoolData, cnpj: e.target.value })}
+                            />
+                        </div>
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label>Endereço</label>
                                 <input
                                     className="input-field"
                                     value={editSchoolData.address}
+                                    placeholder="Rua Exemplo"
                                     onChange={e => setEditSchoolData({ ...editSchoolData, address: e.target.value })}
-                                    placeholder="Rua, Avenida..."
                                 />
                             </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Número</label>
-                                    <input
-                                        className="input-field"
-                                        value={editSchoolData.number}
-                                        onChange={e => setEditSchoolData({ ...editSchoolData, number: e.target.value })}
-                                        placeholder="Número"
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>CEP</label>
-                                    <input
-                                        className="input-field"
-                                        value={editSchoolData.zip_code}
-                                        onChange={e => setEditSchoolData({ ...editSchoolData, zip_code: e.target.value })}
-                                        placeholder="00000-000"
-                                    />
-                                </div>
+                            <div className="form-group" style={{ maxWidth: '100px' }}>
+                                <label>Número</label>
+                                <input
+                                    className="input-field"
+                                    value={editSchoolData.number}
+                                    placeholder="123"
+                                    onChange={e => setEditSchoolData({ ...editSchoolData, number: e.target.value })}
+                                />
                             </div>
+                        </div>
+                        <div className="form-group">
+                            <label>CEP</label>
+                            <input
+                                className="input-field"
+                                value={editSchoolData.zip_code}
+                                placeholder="00000-000"
+                                onChange={e => setEditSchoolData({ ...editSchoolData, zip_code: e.target.value })}
+                            />
+                        </div>
 
-                            <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-                                <button className="btn" onClick={() => setIsEditSchoolModalOpen(false)} style={{ background: 'var(--bg-secondary)' }}>
-                                    Cancelar
-                                </button>
-                                <button className="btn btn-primary" onClick={handleUpdateSchool}>
-                                    <Save size={18} style={{ marginRight: '0.5rem' }} />
-                                    Salvar Alterações
-                                </button>
-                            </div>
+                        <div style={{ marginTop: '1rem', padding: '10px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', fontSize: '0.9rem', color: '#60a5fa' }}>
+                            📍 As coordenadas de latitude e longitude serão atualizadas automaticamente com base no endereço fornecido.
+                        </div>
+
+                        <div className="modal-actions">
+                            <button className="btn" onClick={() => setIsEditSchoolModalOpen(false)}>Cancelar</button>
+                            <button className="btn btn-primary" onClick={handleSaveSchoolEdit}>Salvar</button>
                         </div>
                     </div>
                 </div>
+            )}
+
+            {showTour && (
+                <OnboardingTour
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
+                    onClose={() => setShowTour(false)}
+                    isFirstVisit={isFirstVisit}
+                />
             )}
         </div>
     );

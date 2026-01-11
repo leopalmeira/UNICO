@@ -19,30 +19,51 @@ def login():
     
     db = get_system_db()
     cur = db.cursor()
+    
+    # Debug: mostrar todos os guardians
+    all_guardians = cur.execute('SELECT id, email FROM guardians').fetchall()
+    print(f"🔍 Total de guardians no banco: {len(all_guardians)}")
+    for g in all_guardians:
+        print(f"   - ID {g['id']}: {g['email']}")
+    
     cur.execute('SELECT * FROM guardians WHERE email = ?', (email,))
     guardian = cur.fetchone()
     
     if not guardian:
+        print(f"❌ Guardian não encontrado: {email}")
         return jsonify({'success': False, 'message': 'Credenciais inválidas'}), 401
+    
+    print(f"✅ Guardian encontrado: {guardian['email']}")
+    print(f"🔑 Hash armazenado: {guardian['password'][:50]}...")
     
     valid = False
     try:
         if guardian['password'].startswith('$2'):
+            print(f"🔐 Verificando com bcrypt...")
             if bcrypt.checkpw(password.encode('utf-8'), guardian['password'].encode('utf-8')):
                 valid = True
+                print(f"✅ Senha bcrypt válida!")
+            else:
+                print(f"❌ Senha bcrypt inválida!")
         else:
+            print(f"🔐 Verificando senha plain text...")
             if password == guardian['password']:
                 valid = True
-    except:
+                print(f"✅ Senha plain válida!")
+            else:
+                print(f"❌ Senha plain inválida!")
+    except Exception as e:
+        print(f"❌ Erro na verificação: {e}")
         valid = False
         
     if not valid:
+        print(f"❌ Autenticação falhou para {email}")
         return jsonify({'success': False, 'message': 'Credenciais inválidas'}), 401
         
     token = jwt.encode({
         'id': guardian['id'],
         'email': guardian['email'],
-        'role': 'guardian',
+        'role': guardian.get('role', 'guardian'),
         'exp': datetime.datetime.utcnow() + datetime.timedelta(days=30)
     }, SECRET_KEY, algorithm='HS256')
     
@@ -528,31 +549,32 @@ def get_student_attendance():
     month_arg = request.args.get('month')
     year_arg = request.args.get('year')
     
-    if not (school_id and student_id and month_arg and year_arg):
+    # Se não informar mês/ano, usa o mês atual
+    if not month_arg or not year_arg:
+        from datetime import datetime
+        now = datetime.now()
+        month = now.month
+        year = now.year
+    else:
+        month = int(month_arg)
+        year = int(year_arg)
+    
+    if not (school_id and student_id):
         return jsonify([])
         
     try:
-        month = int(month_arg)
-        year = int(year_arg)
         m_str = f"{month:02d}"
         y_str = str(year)
         
         school_db = None
         try:
             school_db = get_school_db(school_id)
-            # Buscar presenças (apenas 'arrival' conta como presença no calendário?)
-            # O código original frontend apenas checa timestamp. Vamos retornar tudo ou filtrar arrival?
-            # Melhor retornar tudo, o frontend decide, ou filtrar por type='arrival' se só isso importa.
-            # Vou retornar todos os types, pois o frontend só olha 'hasRecord' por presença.
-            # Se departure contar, ok. Mas geralmente arrival conta.
-            # Mas o usuario falou "a frequencia do aluno deve gravar a presença".
             
-            # Buscar presenças usando LIKE para ser mais compatível e robusto com formatos de data ISO
-            # timestamp formato ISO: YYYY-MM-DDTHH:MM:SS.mmmmmm
+            # Buscar de access_logs (que tem event_type: arrival, departure)
             like_pattern = f"{y_str}-{m_str}-%"
             
             rows = school_db.execute('''
-                SELECT timestamp, type FROM attendance 
+                SELECT timestamp, event_type as type FROM access_logs 
                 WHERE student_id = ? AND timestamp LIKE ?
             ''', (student_id, like_pattern)).fetchall()
             
@@ -896,6 +918,143 @@ def send_chat_message(student_id):
         return jsonify({'error': str(e)}), 500
     finally:
         if school_db: school_db.close()
+
+@guardian_bp.route('/api/guardian/invoices', methods=['GET'])
+@token_required
+def get_invoices():
+    guardian_id = g.user.get('id')
+    sys_db = get_system_db()
+    schools = sys_db.execute('SELECT id, name FROM schools').fetchall()
+    
+    all_invoices = []
+    
+    for school in schools:
+        school_db = None
+        try:
+            school_db = get_school_db(school['id'])
+            # Verificar se tabela existe
+            try:
+                school_db.execute('SELECT 1 FROM invoices LIMIT 1')
+            except:
+                continue # Tabela não existe nesta escola
+                
+            # Join to get student info and verify guardian
+            query = '''
+                SELECT i.*, s.name as student_name, s.class_name
+                FROM invoices i
+                JOIN students s ON i.student_id = s.id
+                JOIN student_guardians sg ON s.id = sg.student_id
+                WHERE sg.guardian_id = ?
+                ORDER BY i.due_date DESC
+            '''
+            rows = school_db.execute(query, (guardian_id,)).fetchall()
+            for r in rows:
+                inv = dict(r)
+                inv['school_id'] = school['id']
+                inv['school_name'] = school['name']
+                all_invoices.append(inv)
+        except Exception as e:
+            print(f"Erro ao buscar faturas escola {school['id']}: {e}")
+            continue
+        finally:
+             if school_db: school_db.close()
+             
+    return jsonify({'success': True, 'invoices': all_invoices})
+
+@guardian_bp.route('/api/guardian/grades', methods=['GET'])
+@token_required
+def get_grades():
+    guardian_id = g.user.get('id')
+    sys_db = get_system_db()
+    schools = sys_db.execute('SELECT id, name FROM schools').fetchall()
+    
+    all_grades = []
+    
+    for school in schools:
+        school_db = None
+        try:
+            school_db = get_school_db(school['id'])
+            # Verificar se tabela existe
+            try:
+                school_db.execute('SELECT 1 FROM student_grades LIMIT 1')
+            except:
+                continue 
+                
+            query = '''
+                SELECT g.*, s.name as student_name, s.class_name
+                FROM student_grades g
+                JOIN students s ON g.student_id = s.id
+                JOIN student_guardians sg ON s.id = sg.student_id
+                WHERE sg.guardian_id = ?
+                ORDER BY g.created_at DESC
+            '''
+            
+            rows = school_db.execute(query, (guardian_id,)).fetchall()
+            for r in rows:
+                item = dict(r)
+                item['school_id'] = school['id']
+                item['school_name'] = school['name']
+                # Fetch teacher name from system db
+                if item.get('teacher_id'):
+                    t = sys_db.execute('SELECT name FROM teachers WHERE id = ?', (item['teacher_id'],)).fetchone()
+                    item['teacher_name'] = t['name'] if t else 'Professor'
+                else:
+                    item['teacher_name'] = 'Professor'
+                    
+                all_grades.append(item)
+        except Exception as e:
+            # print(f"Erro ao buscar notas escola {school['id']}: {e}")
+            continue
+        finally:
+             if school_db: school_db.close()
+             
+    return jsonify({'success': True, 'grades': all_grades})
+
+@guardian_bp.route('/api/guardian/reports', methods=['GET'])
+@token_required
+def get_reports():
+    guardian_id = g.user.get('id')
+    sys_db = get_system_db()
+    schools = sys_db.execute('SELECT id, name FROM schools').fetchall()
+    
+    all_reports = []
+    
+    for school in schools:
+        school_db = None
+        try:
+            school_db = get_school_db(school['id'])
+            try:
+                school_db.execute('SELECT 1 FROM student_reports LIMIT 1')
+            except:
+                continue 
+                
+            query = '''
+                SELECT r.*, s.name as student_name, s.class_name
+                FROM student_reports r
+                JOIN students s ON r.student_id = s.id
+                JOIN student_guardians sg ON s.id = sg.student_id
+                WHERE sg.guardian_id = ?
+                ORDER BY r.created_at DESC
+            '''
+            rows = school_db.execute(query, (guardian_id,)).fetchall()
+            for r in rows:
+                item = dict(r)
+                item['school_id'] = school['id']
+                item['school_name'] = school['name']
+                if item.get('teacher_id'):
+                    t = sys_db.execute('SELECT name FROM teachers WHERE id = ?', (item['teacher_id'],)).fetchone()
+                    item['teacher_name'] = t['name'] if t else 'Professor'
+                else:
+                    item['teacher_name'] = 'Coordenação'
+                all_reports.append(item)
+        except Exception as e:
+            continue
+        finally:
+             if school_db: school_db.close()
+             
+    return jsonify({'success': True, 'reports': all_reports})
+
+
 
 
 

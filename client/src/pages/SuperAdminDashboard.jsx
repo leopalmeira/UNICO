@@ -4,6 +4,7 @@ import Sidebar from '../components/Sidebar';
 import WhatsAppPanel from '../components/WhatsAppPanel';
 import AdminSupportTickets from '../components/AdminSupportTickets';
 import CameraRemovalRequests from '../components/CameraRemovalRequests';
+import SuperAdminSaaS from '../components/SuperAdminSaaS';
 import api from '../api/axios';
 
 export default function SuperAdminDashboard() {
@@ -83,7 +84,7 @@ export default function SuperAdminDashboard() {
             <div className="main-content">
                 {activeTab === 'dashboard' && <DashboardTab stats={stats} />}
                 {activeTab === 'schools' && <SchoolsTab schools={schools} loadSchools={loadSchools} />}
-                {activeTab === 'billing' && <BillingTab />}
+                {activeTab === 'billing' && <SuperAdminSaaS />}
                 {activeTab === 'representatives' && <RepresentativesTab />}
                 {activeTab === 'infrastructure' && <InfrastructureTab />}
                 {activeTab === 'camera-requests' && <CameraRemovalRequests />}
@@ -212,37 +213,7 @@ function SchoolsTab({ schools, loadSchools }) {
     );
 }
 
-function BillingTab() {
-    return (
-        <div className="fade-in">
-            <h1 style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '2rem' }}>Faturamento</h1>
 
-            <div className="card-grid">
-                <div className="glass-panel stat-card">
-                    <div className="stat-label">Alunos Pagantes</div>
-                    <div className="stat-value">0</div>
-                </div>
-
-                <div className="glass-panel stat-card">
-                    <div className="stat-label">Faturamento Mensal</div>
-                    <div className="stat-value">R$ 0</div>
-                </div>
-
-                <div className="glass-panel stat-card">
-                    <div className="stat-label">Previsão Próximo Mês</div>
-                    <div className="stat-value">R$ 0</div>
-                </div>
-            </div>
-
-            <div className="glass-panel" style={{ marginTop: '2rem', padding: '1.5rem' }}>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem' }}>Histórico de Pagamentos</h3>
-                <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '2rem' }}>
-                    Nenhum pagamento registrado
-                </div>
-            </div>
-        </div>
-    );
-}
 
 function RepresentativesTab() {
     const [representatives, setRepresentatives] = useState([]);

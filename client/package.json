@@ -12,6 +12,7 @@
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",
     "axios": "^1.13.2",
+    "canvas-confetti": "^1.9.4",
     "face-api.js": "^0.22.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.555.0",

@@ -14,6 +14,7 @@ def login():
     data = request.json
     email = data.get('email')
     password = data.get('password')
+    print(f"🔒 Login attempt for: {email}")
     
     db = get_system_db()
     
@@ -49,12 +50,16 @@ def login():
         if user:
             role = 'inspector'
 
-    # 5. Guardian
+    # 5. Guardian (or Employee via guardian table)
     if not user:
         cur.execute('SELECT * FROM guardians WHERE email = ?', (email,))
         user = cur.fetchone()
         if user:
-            role = 'guardian'
+            # Check if role column exists and uses it, otherwise default to guardian
+            if 'role' in user.keys() and user['role']:
+                role = user['role']
+            else:
+                role = 'guardian'
             
     if not user:
         return jsonify({'message': 'Usuário não encontrado'}), 400

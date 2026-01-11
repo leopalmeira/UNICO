@@ -59,7 +59,13 @@ export default function Login() {
         if (isLogin) {
             const res = await login(formData.email, formData.password);
             if (res.success) {
-                navigate('/dashboard');
+                if (res.role === 'employee') {
+                    navigate('/employee');
+                } else if (res.role === 'inspector') {
+                    navigate('/inspector'); // Rota hipotética se existir painel separado para inspetor
+                } else {
+                    navigate('/dashboard');
+                }
             } else {
                 setError(res.message);
             }

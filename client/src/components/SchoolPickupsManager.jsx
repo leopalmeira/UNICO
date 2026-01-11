@@ -199,23 +199,54 @@ export default function SchoolPickupsManager() {
                 </div>
 
                 {/* INSPETORES */}
+                {/* INSPETORES */}
                 <div className="glass-panel" style={{ padding: '2rem' }}>
                     <div className="flex justify-between items-center mb-6">
                         <div className="flex items-center gap-3">
                             <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500"><ShieldCheck size={24} /></div>
                             <h3 className="text-xl font-semibold">Inspetores</h3>
                         </div>
-                        <button className="btn btn-primary p-2" onClick={() => setShowAddInspector(true)}><UserPlus size={18} /></button>
+                        <button className="btn btn-primary px-4 py-2 flex items-center gap-2" onClick={() => setShowAddInspector(true)}>
+                            <UserPlus size={18} />
+                            <span>Adicionar</span>
+                        </button>
                     </div>
-                    {/* Lista inspetores... */}
-                    <div className="space-y-3 overflow-y-auto max-h-[400px] custom-scrollbar">
-                        {inspectors.length === 0 && <p className="text-center text-gray-500 py-4">Nenhum inspetor.</p>}
-                        {inspectors.map(insp => (
-                            <div key={insp.id} className="flex justify-between items-center p-4 bg-white/5 rounded-xl border border-white/5">
-                                <div><div className="font-medium">{insp.name}</div><div className="text-sm text-gray-400">{insp.email}</div></div>
-                                <button onClick={() => handleDeleteInspector(insp.id, insp.name)} className="text-red-400 hover:bg-red-500/10 p-2 rounded"><Trash2 size={18} /></button>
-                            </div>
-                        ))}
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="border-b border-white/10 text-gray-400 text-sm">
+                                    <th className="p-3 font-semibold">Nome</th>
+                                    <th className="p-3 font-semibold">Email</th>
+                                    <th className="p-3 font-semibold text-right">Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {inspectors.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="3" className="p-4 text-center text-gray-500">
+                                            Nenhum inspetor cadastrado.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    inspectors.map(insp => (
+                                        <tr key={insp.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                            <td className="p-3 font-medium text-white">{insp.name}</td>
+                                            <td className="p-3 text-gray-300">{insp.email}</td>
+                                            <td className="p-3 text-right">
+                                                <button
+                                                    onClick={() => handleDeleteInspector(insp.id, insp.name)}
+                                                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-2 rounded transition-colors"
+                                                    title="Excluir Inspetor"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
