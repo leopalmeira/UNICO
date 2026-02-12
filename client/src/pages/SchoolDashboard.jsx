@@ -43,10 +43,7 @@ export default function SchoolDashboard() {
         name: '',
         parent_email: '',
         phone: '',
-        photo_url: '',
-        class_name: '',
-        age: '',
-        face_descriptor: null
+        class_name: ''
     });
     const [classes, setClasses] = useState([]);
     const [studentSearch, setStudentSearch] = useState('');
@@ -125,10 +122,7 @@ export default function SchoolDashboard() {
         }
     }, [user?.id]);
 
-    useEffect(() => {
-        document.body.classList.add('force-landscape');
-        return () => document.body.classList.remove('force-landscape');
-    }, []);
+
 
     const [showMessageModal, setShowMessageModal] = useState(false);
     const [teacherForModal, setTeacherForModal] = useState(null);
@@ -315,7 +309,7 @@ export default function SchoolDashboard() {
         { id: 'teachers', label: 'Professores', icon: <GraduationCap size={20} /> },
 
         { section: 'Operacional' },
-        { id: 'cameras', label: 'Monitoramento (Câmeras)', icon: <Camera size={20} /> },
+
         { id: 'attendance', label: 'Presença (Painel)', icon: <ClipboardCheck size={20} /> },
         { id: 'pickups', label: 'Portaria (Saídas)', icon: <Clock size={20} /> },
         {
@@ -331,6 +325,7 @@ export default function SchoolDashboard() {
         },
 
         { section: 'Comunicação' },
+
         { id: 'messages', label: 'Mensagens', icon: <MessageCircle size={20} /> },
         { id: 'events', label: 'Eventos', icon: <Calendar size={20} /> },
 
@@ -361,7 +356,7 @@ export default function SchoolDashboard() {
         },
 
         { section: 'Ajuda' },
-        { id: 'support', label: 'Suporte', icon: <HelpCircle size={20} /> },
+
         { id: 'faq', label: 'FAQ', icon: <FileText size={20} /> },
     ];
 
@@ -597,24 +592,10 @@ export default function SchoolDashboard() {
     const handleCreateStudent = async (e) => {
         e.preventDefault();
 
-        // FOTO É OBRIGATÓRIA para biometria facial
-        if (!studentForm.photo_url) {
-            alert('❌ FOTO OBRIGATÓRIA!\n\nPor favor, faça upload de uma foto do aluno para o reconhecimento facial funcionar.');
-            return;
-        }
-
-        if (!studentForm.face_descriptor) {
-            alert('❌ ROSTO NÃO DETECTADO!\n\nA foto precisa ter um rosto visível e claro.\n\nDicas:\n• Use boa iluminação\n• Rosto centralizado\n• Foto de boa qualidade');
-            return;
-        }
-
         try {
             const isEditing = studentForm.id; // Se tem ID, é edição
 
-            console.log(isEditing ? '📝 Editando aluno:' : '📤 Cadastrando novo aluno:', {
-                ...studentForm,
-                face_descriptor: studentForm.face_descriptor ? 'Presente' : 'Ausente'
-            });
+            console.log(isEditing ? '📝 Editando aluno:' : '📤 Cadastrando novo aluno:', studentForm);
 
             if (isEditing) {
                 // Editar aluno existente
@@ -644,10 +625,7 @@ export default function SchoolDashboard() {
                 name: '',
                 parent_email: '',
                 phone: '',
-                photo_url: '',
-                class_name: '',
-                age: '',
-                face_descriptor: null
+                class_name: ''
             });
             loadStudents();
         } catch (err) {
@@ -839,27 +817,6 @@ export default function SchoolDashboard() {
                                 <h3 style={{ fontSize: '3rem', fontWeight: '800', margin: 0, lineHeight: 1, color: '#f59e0b' }}>{classes.length}</h3>
                                 <p style={{ color: 'var(--text-secondary)', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '1px', fontWeight: '600', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                     Turmas <ArrowRight size={14} />
-                                </p>
-                            </div>
-
-                            {/* Card Câmeras */}
-                            <div
-                                onClick={() => setActiveTab('cameras')}
-                                style={{
-                                    position: 'relative', overflow: 'hidden', padding: '1.5rem', borderRadius: '16px',
-                                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(30, 30, 40, 0.4) 100%)',
-                                    border: '1px solid rgba(16, 185, 129, 0.2)',
-                                    cursor: 'pointer', transition: 'transform 0.2s, box-shadow 0.2s'
-                                }}
-                                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(16, 185, 129, 0.4)'; }}
-                                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
-                            >
-                                <div style={{ position: 'absolute', top: -10, right: -10, opacity: 0.1, color: '#10b981' }}>
-                                    <Camera size={100} />
-                                </div>
-                                <h3 style={{ fontSize: '3rem', fontWeight: '800', margin: 0, lineHeight: 1, color: '#10b981' }}>{cameras?.length || 0}</h3>
-                                <p style={{ color: 'var(--text-secondary)', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '1px', fontWeight: '600', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    Câmeras Online <ArrowRight size={14} />
                                 </p>
                             </div>
                         </div>
@@ -1247,14 +1204,6 @@ export default function SchoolDashboard() {
                                     />
                                     <input
                                         className="input-field"
-                                        type="number"
-                                        placeholder="Idade"
-                                        value={studentForm.age}
-                                        onChange={(e) => setStudentForm({ ...studentForm, age: e.target.value })}
-                                        required
-                                    />
-                                    <input
-                                        className="input-field"
                                         type="email"
                                         placeholder="Email do Responsável"
                                         value={studentForm.parent_email}
@@ -1269,20 +1218,6 @@ export default function SchoolDashboard() {
                                         onChange={(e) => setStudentForm({ ...studentForm, phone: e.target.value })}
                                         required
                                     />
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Foto do Aluno</label>
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            onChange={handlePhotoChange}
-                                            style={{ display: 'block', width: '100%', padding: '0.75rem', background: 'rgba(15, 23, 42, 0.6)', border: '2px solid var(--glass-border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', cursor: 'pointer' }}
-                                        />
-                                        {studentForm.photo_url && (
-                                            <div style={{ marginTop: '0.5rem', textAlign: 'center' }}>
-                                                <img src={studentForm.photo_url} alt="Preview" style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover' }} />
-                                            </div>
-                                        )}
-                                    </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Turma *</label>
                                         <select
@@ -1314,7 +1249,12 @@ export default function SchoolDashboard() {
                                             </p>
                                         )}
                                     </div>
-                                    <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                                    <div style={{ gridColumn: '1 / -1', padding: '1rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                                        <p style={{ fontSize: '0.85rem', color: '#10b981', margin: 0 }}>
+                                            📸 <strong>Biometria facial:</strong> O responsável fará o cadastro biométrico pelo App Guardian após vincular o aluno.
+                                        </p>
+                                    </div>
+                                    <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
                                         <button type="submit" className="btn btn-primary">Cadastrar</button>
                                         <button type="button" className="btn" style={{ background: 'var(--bg-secondary)' }} onClick={() => setShowStudentForm(false)}>Cancelar</button>
                                     </div>
@@ -1409,7 +1349,7 @@ export default function SchoolDashboard() {
                     </div>
                 )}
 
-                {activeTab === 'cameras' && (
+                {false && activeTab === 'cameras' && (
                     <div className="fade-in">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                             <div>
@@ -1574,7 +1514,7 @@ export default function SchoolDashboard() {
                     </div>
                 )}
 
-                {activeTab === 'support' && (
+                {false && activeTab === 'support' && (
                     <div className="fade-in">
                         <SupportTickets userType="school" userId={schoolId} />
                     </div>

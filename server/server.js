@@ -1124,16 +1124,26 @@ app.get('/api/school/students', authenticateToken, (req, res) => {
     if (req.user.role !== 'school_admin') return res.sendStatus(403);
     const schoolDB = getSchoolDB(req.user.id);
 
-    // Join com face_descriptors para pegar os descritores
-    const students = schoolDB.prepare(`
-        SELECT 
-            s.*,
-            fd.descriptor as face_descriptor
-        FROM students s
-        LEFT JOIN face_descriptors fd ON s.id = fd.student_id
-    `).all();
+    // Get all students
+    const students = schoolDB.prepare('SELECT * FROM students').all();
 
-    res.json(students);
+    // Get all face descriptors grouped by student
+    const allDescriptors = schoolDB.prepare('SELECT student_id, descriptor, angle FROM face_descriptors ORDER BY student_id').all();
+    const descriptorMap = {};
+    for (const fd of allDescriptors) {
+        if (!descriptorMap[fd.student_id]) descriptorMap[fd.student_id] = [];
+        descriptorMap[fd.student_id].push({ descriptor: fd.descriptor, angle: fd.angle });
+    }
+
+    // Attach descriptors to students (use first descriptor as face_descriptor for backward compat)
+    const result = students.map(s => ({
+        ...s,
+        face_descriptor: descriptorMap[s.id]?.[0]?.descriptor || null,
+        face_descriptors: descriptorMap[s.id] || [],
+        face_descriptor_count: descriptorMap[s.id]?.length || 0
+    }));
+
+    res.json(result);
 });
 
 app.post('/api/school/students', authenticateToken, async (req, res) => {
@@ -1142,14 +1152,7 @@ app.post('/api/school/students', authenticateToken, async (req, res) => {
     const schoolDB = getSchoolDB(req.user.id);
 
     try {
-        console.log('\n\n\n🚨🚨🚨 REQUISIÇÃO RECEBIDA: CRIAR ALUNO 🚨🚨🚨');
-        console.log('Dados:', {
-            name,
-            parent_email,
-            has_photo: !!photo_url,
-            has_descriptor: !!face_descriptor,
-            descriptor_length: face_descriptor ? face_descriptor.length : 0
-        });
+        console.log('\n📝 Cadastrando aluno:', { name, parent_email, phone, class_name });
 
         // 1. Inserir aluno na tabela students (SEM face_descriptor no campo antigo)
         const result = schoolDB.prepare(
@@ -1159,11 +1162,20 @@ app.post('/api/school/students', authenticateToken, async (req, res) => {
         const studentId = result.lastInsertRowid;
         console.log(`✅ Aluno criado com ID: ${studentId}`);
 
-        // 2. Se tem face_descriptor, salvar na tabela face_descriptors
-        if (face_descriptor) {
+        // 2. Se tem face_descriptor(s), salvar na tabela face_descriptors
+        const face_descriptors = req.body.face_descriptors; // Array of {descriptor, angle}
+        if (face_descriptors && Array.isArray(face_descriptors) && face_descriptors.length > 0) {
+            // Multi-angle mode
+            const insertStmt = schoolDB.prepare('INSERT INTO face_descriptors (student_id, descriptor, angle) VALUES (?, ?, ?)');
+            for (const fd of face_descriptors) {
+                insertStmt.run(studentId, fd.descriptor, fd.angle || 'front');
+            }
+            console.log(`✅ ${face_descriptors.length} descritores faciais salvos para aluno ID: ${studentId}`);
+        } else if (face_descriptor) {
+            // Single descriptor mode (backward compat)
             schoolDB.prepare(
-                'INSERT INTO face_descriptors (student_id, descriptor) VALUES (?, ?)'
-            ).run(studentId, face_descriptor);
+                'INSERT INTO face_descriptors (student_id, descriptor, angle) VALUES (?, ?, ?)'
+            ).run(studentId, face_descriptor, 'front');
             console.log(`✅ Descritor facial salvo para aluno ID: ${studentId}`);
         }
 
@@ -1222,21 +1234,30 @@ app.post('/api/school/students', authenticateToken, async (req, res) => {
 app.put('/api/school/students/:id', authenticateToken, (req, res) => {
     if (req.user.role !== 'school_admin') return res.sendStatus(403);
     const { id } = req.params;
-    const { face_descriptor } = req.body;
+    const { face_descriptor, face_descriptors } = req.body;
     const schoolDB = getSchoolDB(req.user.id);
 
     try {
-        console.log(`📝 Atualizando aluno ID ${id} com descritor facial`);
+        console.log(`📝 Atualizando aluno ID ${id} com descritor(es) facial(is)`);
 
-        // Usar INSERT OR REPLACE para atualizar ou criar descritor
-        schoolDB.prepare(`
-            INSERT INTO face_descriptors (student_id, descriptor, updated_at) 
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(student_id) 
-            DO UPDATE SET descriptor = ?, updated_at = CURRENT_TIMESTAMP
-        `).run(id, face_descriptor, face_descriptor);
+        // Delete existing descriptors first
+        schoolDB.prepare('DELETE FROM face_descriptors WHERE student_id = ?').run(id);
 
-        console.log(`✅ Aluno ID ${id} atualizado com sucesso`);
+        if (face_descriptors && Array.isArray(face_descriptors) && face_descriptors.length > 0) {
+            // Multi-angle mode
+            const insertStmt = schoolDB.prepare('INSERT INTO face_descriptors (student_id, descriptor, angle) VALUES (?, ?, ?)');
+            for (const fd of face_descriptors) {
+                insertStmt.run(id, fd.descriptor || fd, fd.angle || 'front');
+            }
+            console.log(`✅ ${face_descriptors.length} descritores salvos para aluno ID: ${id}`);
+        } else if (face_descriptor) {
+            // Single descriptor (backward compat)
+            schoolDB.prepare(
+                'INSERT INTO face_descriptors (student_id, descriptor, angle) VALUES (?, ?, ?)'
+            ).run(id, face_descriptor, 'front');
+            console.log(`✅ 1 descritor salvo para aluno ID: ${id}`);
+        }
+
         res.json({ message: 'Student updated' });
     } catch (error) {
         console.error('❌ Erro ao atualizar aluno:', error);
@@ -1571,19 +1592,32 @@ app.get('/api/school/classes', authenticateToken, (req, res) => {
 
 // Get students with face descriptors for recognition
 app.get('/api/school/students/faces', authenticateToken, (req, res) => {
-    // Allow school admin or teacher (if implemented later)
     const schoolDB = getSchoolDB(req.user.id);
     try {
-        const students = schoolDB.prepare(`
-            SELECT s.id, s.name, s.parent_email, s.phone, s.class_name, fd.descriptor as face_descriptor
-            FROM students s
-            `).all();
-        // Parse descriptors
-        const studentsWithFaces = students.map(s => ({
+        // Get all students
+        const students = schoolDB.prepare('SELECT s.id, s.name, s.parent_email, s.phone, s.class_name FROM students s').all();
+
+        // Get all face descriptors
+        const allDescriptors = schoolDB.prepare('SELECT student_id, descriptor, angle FROM face_descriptors ORDER BY student_id').all();
+        const descriptorMap = {};
+        for (const fd of allDescriptors) {
+            if (!descriptorMap[fd.student_id]) descriptorMap[fd.student_id] = [];
+            try {
+                descriptorMap[fd.student_id].push({
+                    descriptor: JSON.parse(fd.descriptor),
+                    angle: fd.angle
+                });
+            } catch (e) { }
+        }
+
+        const result = students.map(s => ({
             ...s,
-            face_descriptor: JSON.parse(s.face_descriptor)
+            face_descriptor: descriptorMap[s.id]?.[0]?.descriptor || null,
+            face_descriptors: descriptorMap[s.id] || [],
+            face_descriptor_count: descriptorMap[s.id]?.length || 0
         }));
-        res.json(studentsWithFaces);
+
+        res.json(result);
     } catch (error) {
         console.error('Error fetching student faces:', error);
         res.json([]);
@@ -1836,7 +1870,7 @@ app.get('/api/teacher/students', authenticateToken, (req, res) => {
 app.put('/api/teacher/students/:id/face', authenticateToken, (req, res) => {
     if (req.user.role !== 'teacher') return res.sendStatus(403);
     const { id } = req.params;
-    const { face_descriptor } = req.body;
+    const { face_descriptor, face_descriptors } = req.body;
     const teacher = req.user;
 
     if (!teacher.school_id) return res.status(403).json({ message: 'Teacher not linked to any school' });
@@ -1848,21 +1882,734 @@ app.put('/api/teacher/students/:id/face', authenticateToken, (req, res) => {
         const student = schoolDB.prepare('SELECT id FROM students WHERE id = ?').get(id);
         if (!student) return res.status(404).json({ message: 'Student not found' });
 
-        console.log(`📝 Teacher ${teacher.name} updating face for Student ID ${id} `);
+        console.log(`📝 Teacher ${teacher.name} updating face for Student ID ${id}`);
 
-        // Insert or Update Descriptor
-        schoolDB.prepare(`
-                INSERT INTO face_descriptors(student_id, descriptor, updated_at)
-        VALUES(?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(student_id) 
-                DO UPDATE SET descriptor = ?, updated_at = CURRENT_TIMESTAMP
-            `).run(id, face_descriptor, face_descriptor);
+        // Delete existing descriptors
+        schoolDB.prepare('DELETE FROM face_descriptors WHERE student_id = ?').run(id);
 
-        console.log(`✅ Face descriptor updated for Student ID ${id} `);
+        if (face_descriptors && Array.isArray(face_descriptors) && face_descriptors.length > 0) {
+            // Multi-angle mode
+            const insertStmt = schoolDB.prepare('INSERT INTO face_descriptors (student_id, descriptor, angle) VALUES (?, ?, ?)');
+            for (const fd of face_descriptors) {
+                insertStmt.run(id, fd.descriptor || fd, fd.angle || 'front');
+            }
+            console.log(`✅ ${face_descriptors.length} face descriptors saved for Student ID ${id}`);
+        } else if (face_descriptor) {
+            // Single descriptor (backward compat)
+            schoolDB.prepare(
+                'INSERT INTO face_descriptors (student_id, descriptor, angle) VALUES (?, ?, ?)'
+            ).run(id, face_descriptor, 'front');
+            console.log(`✅ 1 face descriptor saved for Student ID ${id}`);
+        }
+
         res.json({ message: 'Face descriptor updated successfully' });
     } catch (error) {
         console.error('❌ Error updating student face:', error);
         res.status(500).json({ error: 'Error updating student face', message: error.message });
+    }
+});
+
+// --- TEACHER SESSION & ATTENTION SYSTEM ---
+
+// Migration: Create tables needed for teacher session/attention system
+function migrateTeacherSessionTables(schoolDB) {
+    try {
+        schoolDB.exec(`
+            CREATE TABLE IF NOT EXISTS class_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER NOT NULL,
+                class_id INTEGER NOT NULL,
+                subject TEXT NOT NULL,
+                topic TEXT DEFAULT '',
+                mode TEXT DEFAULT 'expositiva',
+                started_at TEXT DEFAULT (datetime('now','localtime')),
+                ended_at TEXT,
+                status TEXT DEFAULT 'active'
+            );
+            CREATE TABLE IF NOT EXISTS attention_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                teacher_id INTEGER NOT NULL,
+                class_id INTEGER NOT NULL,
+                subject TEXT NOT NULL,
+                level TEXT NOT NULL,
+                notes TEXT DEFAULT '',
+                checked_at TEXT DEFAULT (datetime('now','localtime')),
+                FOREIGN KEY (session_id) REFERENCES class_sessions(id)
+            );
+            CREATE TABLE IF NOT EXISTS lesson_plans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER NOT NULL,
+                class_id INTEGER NOT NULL,
+                subject TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                objectives TEXT DEFAULT '',
+                content TEXT DEFAULT '',
+                resources TEXT DEFAULT '',
+                planned_date TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS weekly_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER NOT NULL,
+                class_id INTEGER NOT NULL,
+                subject TEXT NOT NULL,
+                week_start TEXT NOT NULL,
+                week_end TEXT NOT NULL,
+                summary TEXT DEFAULT '',
+                avg_attention TEXT DEFAULT 'bom',
+                total_sessions INTEGER DEFAULT 0,
+                total_checks INTEGER DEFAULT 0,
+                highlights TEXT DEFAULT '',
+                concerns TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS teacher_polls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER NOT NULL,
+                class_id INTEGER NOT NULL,
+                session_id INTEGER,
+                question TEXT NOT NULL,
+                option_a TEXT NOT NULL,
+                option_b TEXT NOT NULL,
+                option_c TEXT DEFAULT '',
+                option_d TEXT DEFAULT '',
+                correct_answer TEXT,
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS poll_responses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                poll_id INTEGER NOT NULL,
+                student_id INTEGER NOT NULL,
+                student_name TEXT,
+                answer TEXT,
+                is_correct INTEGER DEFAULT 0,
+                responded_at TEXT DEFAULT (datetime('now','localtime')),
+                FOREIGN KEY (poll_id) REFERENCES teacher_polls(id)
+            );
+        `);
+    } catch (e) {
+        // Tables already exist, ignore
+    }
+}
+
+// Start a class session
+app.post('/api/teacher/session/start', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { class_id, subject, topic, mode } = req.body;
+    const teacher = req.user;
+
+    if (!teacher.school_id) return res.status(403).json({ error: 'Professor sem escola vinculada' });
+    if (!class_id || !subject) return res.status(400).json({ error: 'class_id e subject são obrigatórios' });
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        // End any existing active sessions for this teacher
+        schoolDB.prepare(`
+            UPDATE class_sessions SET status = 'ended', ended_at = datetime('now','localtime')
+            WHERE teacher_id = ? AND status = 'active'
+        `).run(teacher.id);
+
+        const result = schoolDB.prepare(`
+            INSERT INTO class_sessions (teacher_id, class_id, subject, topic, mode)
+            VALUES (?, ?, ?, ?, ?)
+        `).run(teacher.id, class_id, subject, topic || '', mode || 'expositiva');
+
+        console.log(`🎓 [SESSION] Professor ${teacher.id} iniciou sessão: ${subject} - ${mode}`);
+
+        res.json({
+            success: true,
+            session_id: result.lastInsertRowid,
+            message: 'Sessão iniciada com sucesso'
+        });
+    } catch (error) {
+        console.error('❌ [SESSION] Erro ao iniciar sessão:', error);
+        res.status(500).json({ error: 'Erro ao iniciar sessão', details: error.message });
+    }
+});
+
+// End a class session
+app.post('/api/teacher/session/end', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { session_id } = req.body;
+    const teacher = req.user;
+
+    if (!teacher.school_id) return res.status(403).json({ error: 'Professor sem escola vinculada' });
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        const query = session_id
+            ? `UPDATE class_sessions SET status = 'ended', ended_at = datetime('now','localtime') WHERE id = ? AND teacher_id = ?`
+            : `UPDATE class_sessions SET status = 'ended', ended_at = datetime('now','localtime') WHERE teacher_id = ? AND status = 'active'`;
+
+        const params = session_id ? [session_id, teacher.id] : [teacher.id];
+        const result = schoolDB.prepare(query).run(...params);
+
+        console.log(`🔴 [SESSION] Professor ${teacher.id} encerrou sessão`);
+        res.json({ success: true, changes: result.changes });
+    } catch (error) {
+        console.error('❌ [SESSION] Erro ao encerrar sessão:', error);
+        res.status(500).json({ error: 'Erro ao encerrar sessão' });
+    }
+});
+
+// Get active session
+app.get('/api/teacher/session/active', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const teacher = req.user;
+    if (!teacher.school_id) return res.json(null);
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        const session = schoolDB.prepare(`
+            SELECT * FROM class_sessions WHERE teacher_id = ? AND status = 'active' LIMIT 1
+        `).get(teacher.id);
+        res.json(session || null);
+    } catch (error) {
+        res.json(null);
+    }
+});
+
+// Submit attention check (Quick Check)
+app.post('/api/teacher/attention-check', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { session_id, class_id, subject, level, notes } = req.body;
+    const teacher = req.user;
+
+    if (!teacher.school_id) return res.status(403).json({ error: 'Professor sem escola vinculada' });
+    if (!level) return res.status(400).json({ error: 'level é obrigatório (excelente, bom, regular, ruim)' });
+
+    const validLevels = ['excelente', 'bom', 'regular', 'ruim'];
+    if (!validLevels.includes(level)) {
+        return res.status(400).json({ error: `level deve ser: ${validLevels.join(', ')}` });
+    }
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        // If no session_id, find the active one
+        let activeSession = session_id
+            ? schoolDB.prepare('SELECT * FROM class_sessions WHERE id = ? AND teacher_id = ?').get(session_id, teacher.id)
+            : schoolDB.prepare('SELECT * FROM class_sessions WHERE teacher_id = ? AND status = ? LIMIT 1').get(teacher.id, 'active');
+
+        const sessId = activeSession?.id || 0;
+        const classId = class_id || activeSession?.class_id;
+        const subj = subject || activeSession?.subject || 'Geral';
+
+        const result = schoolDB.prepare(`
+            INSERT INTO attention_checks (session_id, teacher_id, class_id, subject, level, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `).run(sessId, teacher.id, classId, subj, level, notes || '');
+
+        const levelEmoji = { excelente: '🟢', bom: '🟡', regular: '🟠', ruim: '🔴' };
+        console.log(`${levelEmoji[level]} [ATTENTION] Professor ${teacher.id}: ${level} - ${subj}`);
+
+        res.json({
+            success: true,
+            id: result.lastInsertRowid,
+            message: `Avaliação "${level}" registrada`
+        });
+    } catch (error) {
+        console.error('❌ [ATTENTION] Erro ao registrar avaliação:', error);
+        res.status(500).json({ error: 'Erro ao registrar avaliação' });
+    }
+});
+
+// Get attention history for a class
+app.get('/api/teacher/attention-history', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { class_id, days } = req.query;
+    const teacher = req.user;
+    if (!teacher.school_id) return res.json([]);
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        const daysBack = parseInt(days) || 30;
+        let query = `
+            SELECT ac.*, cs.mode, cs.topic as session_topic
+            FROM attention_checks ac
+            LEFT JOIN class_sessions cs ON ac.session_id = cs.id
+            WHERE ac.teacher_id = ?
+        `;
+        const params = [teacher.id];
+
+        if (class_id) {
+            query += ` AND ac.class_id = ?`;
+            params.push(class_id);
+        }
+
+        query += ` AND ac.checked_at >= datetime('now', '-${daysBack} days', 'localtime')`;
+        query += ` ORDER BY ac.checked_at DESC LIMIT 100`;
+
+        const checks = schoolDB.prepare(query).all(...params);
+        res.json(checks);
+    } catch (error) {
+        console.error('❌ [ATTENTION] Erro ao buscar histórico:', error);
+        res.json([]);
+    }
+});
+
+// Get today's attention summary for dashboard
+app.get('/api/teacher/attention-summary', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { class_id } = req.query;
+    const teacher = req.user;
+    if (!teacher.school_id) return res.json({ total: 0, counts: {}, average: 'N/A' });
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        let query = `
+            SELECT level, COUNT(*) as count
+            FROM attention_checks
+            WHERE teacher_id = ?
+            AND date(checked_at) = date('now','localtime')
+        `;
+        const params = [teacher.id];
+
+        if (class_id) {
+            query += ` AND class_id = ?`;
+            params.push(class_id);
+        }
+        query += ` GROUP BY level`;
+
+        const rows = schoolDB.prepare(query).all(...params);
+        const counts = { excelente: 0, bom: 0, regular: 0, ruim: 0 };
+        let total = 0;
+        rows.forEach(r => { counts[r.level] = r.count; total += r.count; });
+
+        // Calculate weighted average
+        const weights = { excelente: 4, bom: 3, regular: 2, ruim: 1 };
+        let weightedSum = 0;
+        Object.entries(counts).forEach(([level, count]) => {
+            weightedSum += weights[level] * count;
+        });
+        const avgScore = total > 0 ? weightedSum / total : 0;
+        let average = 'N/A';
+        if (total > 0) {
+            if (avgScore >= 3.5) average = 'excelente';
+            else if (avgScore >= 2.5) average = 'bom';
+            else if (avgScore >= 1.5) average = 'regular';
+            else average = 'ruim';
+        }
+
+        // Get session count for today
+        let sessQuery = `SELECT COUNT(*) as count FROM class_sessions WHERE teacher_id = ? AND date(started_at) = date('now','localtime')`;
+        const sessParams = [teacher.id];
+        if (class_id) { sessQuery += ` AND class_id = ?`; sessParams.push(class_id); }
+        const sessCount = schoolDB.prepare(sessQuery).get(...sessParams);
+
+        res.json({
+            total,
+            counts,
+            average,
+            avgScore: Math.round(avgScore * 10) / 10,
+            sessions_today: sessCount?.count || 0
+        });
+    } catch (error) {
+        console.error('❌ [ATTENTION] Erro ao gerar sumário:', error);
+        res.json({ total: 0, counts: {}, average: 'N/A' });
+    }
+});
+
+// Get session history
+app.get('/api/teacher/sessions', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { class_id, limit } = req.query;
+    const teacher = req.user;
+    if (!teacher.school_id) return res.json([]);
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        let query = `SELECT * FROM class_sessions WHERE teacher_id = ?`;
+        const params = [teacher.id];
+        if (class_id) { query += ` AND class_id = ?`; params.push(class_id); }
+        query += ` ORDER BY started_at DESC LIMIT ?`;
+        params.push(parseInt(limit) || 20);
+
+        const sessions = schoolDB.prepare(query).all(...params);
+        res.json(sessions);
+    } catch (error) {
+        res.json([]);
+    }
+});
+
+// --- LESSON PLANS ---
+
+app.post('/api/teacher/lesson-plans', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { class_id, subject, topic, objectives, content, resources, planned_date } = req.body;
+    const teacher = req.user;
+    if (!teacher.school_id) return res.status(403).json({ error: 'Professor sem escola vinculada' });
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        const result = schoolDB.prepare(`
+            INSERT INTO lesson_plans (teacher_id, class_id, subject, topic, objectives, content, resources, planned_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(teacher.id, class_id, subject, topic, objectives || '', content || '', resources || '', planned_date || new Date().toISOString().split('T')[0]);
+
+        res.json({ success: true, id: result.lastInsertRowid });
+    } catch (error) {
+        console.error('❌ [LESSON] Erro ao salvar plano:', error);
+        res.status(500).json({ error: 'Erro ao salvar plano de aula' });
+    }
+});
+
+app.get('/api/teacher/lesson-plans', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { class_id } = req.query;
+    const teacher = req.user;
+    if (!teacher.school_id) return res.json([]);
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        let query = `SELECT * FROM lesson_plans WHERE teacher_id = ?`;
+        const params = [teacher.id];
+        if (class_id) { query += ` AND class_id = ?`; params.push(class_id); }
+        query += ` ORDER BY planned_date DESC LIMIT 50`;
+
+        res.json(schoolDB.prepare(query).all(...params));
+    } catch (error) {
+        res.json([]);
+    }
+});
+
+app.put('/api/teacher/lesson-plans/:id', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { id } = req.params;
+    const { subject, topic, objectives, content, resources, planned_date, status } = req.body;
+    const teacher = req.user;
+    if (!teacher.school_id) return res.status(403).json({ error: 'Professor sem escola vinculada' });
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+
+    try {
+        schoolDB.prepare(`
+            UPDATE lesson_plans SET subject = ?, topic = ?, objectives = ?, content = ?, resources = ?, planned_date = ?, status = ?
+            WHERE id = ? AND teacher_id = ?
+        `).run(subject, topic, objectives || '', content || '', resources || '', planned_date, status || 'pending', id, teacher.id);
+
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao atualizar plano' });
+    }
+});
+
+app.delete('/api/teacher/lesson-plans/:id', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { id } = req.params;
+    const teacher = req.user;
+    if (!teacher.school_id) return res.status(403).json({ error: 'Professor sem escola vinculada' });
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+
+    try {
+        schoolDB.prepare('DELETE FROM lesson_plans WHERE id = ? AND teacher_id = ?').run(id, teacher.id);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao deletar plano' });
+    }
+});
+
+// --- WEEKLY REPORTS ---
+
+app.post('/api/teacher/weekly-report', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { class_id, subject, week_start, week_end, summary, highlights, concerns } = req.body;
+    const teacher = req.user;
+    if (!teacher.school_id) return res.status(403).json({ error: 'Professor sem escola vinculada' });
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        // Auto-calculate from attention checks for this week
+        const checks = schoolDB.prepare(`
+            SELECT level, COUNT(*) as count FROM attention_checks
+            WHERE teacher_id = ? AND class_id = ? AND subject = ?
+            AND date(checked_at) >= date(?) AND date(checked_at) <= date(?)
+            GROUP BY level
+        `).all(teacher.id, class_id, subject, week_start, week_end);
+
+        const counts = { excelente: 0, bom: 0, regular: 0, ruim: 0 };
+        let total = 0;
+        checks.forEach(r => { counts[r.level] = r.count; total += r.count; });
+
+        const weights = { excelente: 4, bom: 3, regular: 2, ruim: 1 };
+        let weightedSum = 0;
+        Object.entries(counts).forEach(([level, count]) => { weightedSum += weights[level] * count; });
+        const avgScore = total > 0 ? weightedSum / total : 0;
+        let avg_attention = 'bom';
+        if (total > 0) {
+            if (avgScore >= 3.5) avg_attention = 'excelente';
+            else if (avgScore >= 2.5) avg_attention = 'bom';
+            else if (avgScore >= 1.5) avg_attention = 'regular';
+            else avg_attention = 'ruim';
+        }
+
+        const sessCount = schoolDB.prepare(`
+            SELECT COUNT(*) as count FROM class_sessions
+            WHERE teacher_id = ? AND class_id = ?
+            AND date(started_at) >= date(?) AND date(started_at) <= date(?)
+        `).get(teacher.id, class_id, week_start, week_end);
+
+        const result = schoolDB.prepare(`
+            INSERT INTO weekly_reports (teacher_id, class_id, subject, week_start, week_end, summary, avg_attention, total_sessions, total_checks, highlights, concerns)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(teacher.id, class_id, subject, week_start, week_end, summary || '', avg_attention, sessCount?.count || 0, total, highlights || '', concerns || '');
+
+        res.json({ success: true, id: result.lastInsertRowid, avg_attention, total_checks: total });
+    } catch (error) {
+        console.error('❌ [REPORT] Erro ao gerar relatório:', error);
+        res.status(500).json({ error: 'Erro ao gerar relatório semanal' });
+    }
+});
+
+app.get('/api/teacher/weekly-reports', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { class_id } = req.query;
+    const teacher = req.user;
+    if (!teacher.school_id) return res.json([]);
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        let query = `SELECT * FROM weekly_reports WHERE teacher_id = ?`;
+        const params = [teacher.id];
+        if (class_id) { query += ` AND class_id = ?`; params.push(class_id); }
+        query += ` ORDER BY week_end DESC LIMIT 20`;
+
+        res.json(schoolDB.prepare(query).all(...params));
+    } catch (error) {
+        res.json([]);
+    }
+});
+
+// --- POLLS (Manual, no camera) ---
+
+app.post('/api/teacher/polls/create', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { class_id, session_id, question, option_a, option_b, option_c, option_d, correct_answer } = req.body;
+    const teacher = req.user;
+    if (!teacher.school_id) return res.status(403).json({ error: 'Professor sem escola vinculada' });
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        const result = schoolDB.prepare(`
+            INSERT INTO teacher_polls (teacher_id, class_id, session_id, question, option_a, option_b, option_c, option_d, correct_answer)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(teacher.id, class_id, session_id || null, question, option_a, option_b, option_c || '', option_d || '', correct_answer || '');
+
+        res.json({ success: true, poll_id: result.lastInsertRowid });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao criar enquete' });
+    }
+});
+
+app.post('/api/teacher/polls/:id/submit-responses', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { id } = req.params;
+    const { responses } = req.body; // [{student_id, student_name, answer, is_correct}]
+    const teacher = req.user;
+    if (!teacher.school_id) return res.status(403).json({ error: 'Professor sem escola vinculada' });
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        const insert = schoolDB.prepare(`
+            INSERT INTO poll_responses (poll_id, student_id, student_name, answer, is_correct)
+            VALUES (?, ?, ?, ?, ?)
+        `);
+
+        const insertMany = schoolDB.transaction((items) => {
+            for (const r of items) {
+                insert.run(id, r.student_id, r.student_name || '', r.answer, r.is_correct ? 1 : 0);
+            }
+        });
+
+        insertMany(responses || []);
+        res.json({ success: true, count: (responses || []).length });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao registrar respostas' });
+    }
+});
+
+app.get('/api/teacher/polls/history', authenticateToken, (req, res) => {
+    if (req.user.role !== 'teacher') return res.sendStatus(403);
+    const { class_id } = req.query;
+    const teacher = req.user;
+    if (!teacher.school_id) return res.json([]);
+
+    const schoolDB = getSchoolDB(teacher.school_id);
+    migrateTeacherSessionTables(schoolDB);
+
+    try {
+        let query = `SELECT * FROM teacher_polls WHERE teacher_id = ?`;
+        const params = [teacher.id];
+        if (class_id) { query += ` AND class_id = ?`; params.push(class_id); }
+        query += ` ORDER BY created_at DESC LIMIT 50`;
+
+        const polls = schoolDB.prepare(query).all(...params);
+
+        // Attach response counts
+        for (const poll of polls) {
+            const stats = schoolDB.prepare(`
+                SELECT COUNT(*) as total, SUM(is_correct) as correct FROM poll_responses WHERE poll_id = ?
+            `).get(poll.id);
+            poll.total_responses = stats?.total || 0;
+            poll.correct_responses = stats?.correct || 0;
+        }
+
+        res.json(polls);
+    } catch (error) {
+        res.json([]);
+    }
+});
+
+// --- GUARDIAN: Class Attention Data (for PWA) ---
+// Returns a SINGLE daily summary = weighted average of ALL teachers' quick checks
+
+app.get('/api/guardian/class-attention/:school_id/:class_name', (req, res) => {
+    const { school_id, class_name } = req.params;
+    const { date: queryDate } = req.query; // optional: ?date=2026-02-12
+
+    try {
+        const schoolDB = getSchoolDB(school_id);
+        migrateTeacherSessionTables(schoolDB);
+
+        const classObj = schoolDB.prepare('SELECT id FROM classes WHERE name = ?').get(class_name);
+        if (!classObj) return res.json({ class_name, date: new Date().toISOString().split('T')[0], overall_level: 'N/A', score: 0, total_checks: 0, teachers_count: 0, subjects_today: [] });
+
+        const targetDate = queryDate || "date('now','localtime')";
+        const dateClause = queryDate ? `date(ac.checked_at) = date('${queryDate}')` : `date(ac.checked_at) = date('now','localtime')`;
+
+        // Get ALL attention checks from ALL teachers for this class today
+        const checks = schoolDB.prepare(`
+            SELECT ac.level, COUNT(*) as count
+            FROM attention_checks ac
+            WHERE ac.class_id = ? AND ${dateClause}
+            GROUP BY ac.level
+        `).all(classObj.id);
+
+        const counts = { excelente: 0, bom: 0, regular: 0, ruim: 0 };
+        let total = 0;
+        checks.forEach(r => { counts[r.level] = r.count; total += r.count; });
+
+        // Weighted average across ALL teachers
+        const weights = { excelente: 4, bom: 3, regular: 2, ruim: 1 };
+        let weightedSum = 0;
+        Object.entries(counts).forEach(([level, count]) => { weightedSum += weights[level] * count; });
+        const avgScore = total > 0 ? weightedSum / total : 0;
+
+        let overall_level = 'N/A';
+        if (total > 0) {
+            if (avgScore >= 3.5) overall_level = 'excelente';
+            else if (avgScore >= 2.5) overall_level = 'bom';
+            else if (avgScore >= 1.5) overall_level = 'regular';
+            else overall_level = 'ruim';
+        }
+
+        // Get distinct teachers+subjects that contributed today
+        const systemDB = getSystemDB();
+        const contributors = schoolDB.prepare(`
+            SELECT DISTINCT ac.teacher_id, ac.subject
+            FROM attention_checks ac
+            WHERE ac.class_id = ? AND ${dateClause}
+        `).all(classObj.id);
+
+        const subjects_today = contributors.map(c => {
+            const t = systemDB.prepare('SELECT name FROM teachers WHERE id = ?').get(c.teacher_id);
+            return { teacher: t?.name || 'Professor', subject: c.subject };
+        });
+
+        // Last 7 days history for trend
+        const history = schoolDB.prepare(`
+            SELECT date(ac.checked_at) as day, ac.level, COUNT(*) as count
+            FROM attention_checks ac
+            WHERE ac.class_id = ? AND ac.checked_at >= datetime('now', '-7 days', 'localtime')
+            GROUP BY day, ac.level
+            ORDER BY day ASC
+        `).all(classObj.id);
+
+        const dailyHistory = {};
+        history.forEach(h => {
+            if (!dailyHistory[h.day]) dailyHistory[h.day] = { excelente: 0, bom: 0, regular: 0, ruim: 0, total: 0 };
+            dailyHistory[h.day][h.level] = h.count;
+            dailyHistory[h.day].total += h.count;
+        });
+
+        const trend = Object.entries(dailyHistory).map(([day, d]) => {
+            let ws = 0;
+            Object.entries(d).forEach(([l, c]) => { if (weights[l]) ws += weights[l] * c; });
+            const sc = d.total > 0 ? Math.round((ws / d.total) * 10) / 10 : 0;
+            return { date: day, score: sc, total_checks: d.total };
+        });
+
+        res.json({
+            class_name,
+            date: new Date().toISOString().split('T')[0],
+            overall_level,
+            score: Math.round(avgScore * 10) / 10,
+            total_checks: total,
+            counts,
+            teachers_count: new Set(contributors.map(c => c.teacher_id)).size,
+            subjects_today,
+            trend
+        });
+    } catch (error) {
+        console.error('❌ [GUARDIAN-ATTENTION] Erro:', error);
+        res.json({ class_name, date: new Date().toISOString().split('T')[0], overall_level: 'N/A', score: 0, total_checks: 0, teachers_count: 0, subjects_today: [], trend: [] });
+    }
+});
+
+// Guardian: Get weekly reports for a class
+app.get('/api/guardian/weekly-reports/:school_id/:class_name', (req, res) => {
+    const { school_id, class_name } = req.params;
+
+    try {
+        const schoolDB = getSchoolDB(school_id);
+        migrateTeacherSessionTables(schoolDB);
+        const systemDB = getSystemDB();
+
+        const classObj = schoolDB.prepare('SELECT id FROM classes WHERE name = ?').get(class_name);
+        if (!classObj) return res.json([]);
+
+        const reports = schoolDB.prepare(`
+            SELECT * FROM weekly_reports WHERE class_id = ? ORDER BY week_end DESC LIMIT 10
+        `).all(classObj.id);
+
+        // Enrich with teacher names
+        for (const r of reports) {
+            const t = systemDB.prepare('SELECT name FROM teachers WHERE id = ?').get(r.teacher_id);
+            r.teacher_name = t?.name || 'Professor';
+        }
+
+        res.json(reports);
+    } catch (error) {
+        console.error('❌ [GUARDIAN-REPORTS] Erro:', error);
+        res.json([]);
     }
 });
 
@@ -1902,58 +2649,64 @@ app.get('/api/representative/visits', authenticateToken, (req, res) => {
 // --- FACIAL RECOGNITION ROUTES ---
 
 // Get all students with embeddings for facial recognition (PUBLIC - for camera recognition)
+// Now returns MULTIPLE descriptors per student for multi-angle matching
 app.get('/api/school/:schoolId/students/embeddings', (req, res) => {
     try {
         const { schoolId } = req.params;
         const schoolDB = getSchoolDB(schoolId);
 
-        // Buscar de AMBAS as fontes para compatibilidade:
-        // 1. Tabela face_descriptors (novo formato)
-        // 2. Coluna face_descriptor na tabela students (formato antigo)
+        // Get all students
         const students = schoolDB.prepare(`
-            SELECT
-        s.id,
-            s.name,
-            s.phone as guardian_phone,
-            s.class_name,
-            s.photo_url,
-            COALESCE(fd.descriptor, s.face_descriptor) as face_descriptor
+            SELECT s.id, s.name, s.phone as guardian_phone, s.class_name, s.photo_url, s.face_descriptor as legacy_descriptor
             FROM students s
-            LEFT JOIN face_descriptors fd ON s.id = fd.student_id
-            WHERE fd.descriptor IS NOT NULL OR s.face_descriptor IS NOT NULL
         `).all();
 
-        // Parse dos descritores
-        const studentsWithParsedDescriptors = students.map(s => {
-            let descriptor = s.face_descriptor;
-
-            // Ignorar se for null ou vazio
-            if (!descriptor) return null;
-
-            // Se for string, fazer parse
-            if (typeof descriptor === 'string') {
-                try {
-                    descriptor = JSON.parse(descriptor);
-                } catch (e) {
-                    console.error(`Erro ao parsear descritor do aluno ${s.id}: `, e);
-                    return null;
+        // Get ALL face descriptors (multiple per student)
+        const allDescriptors = schoolDB.prepare('SELECT student_id, descriptor, angle FROM face_descriptors').all();
+        const descriptorMap = {};
+        for (const fd of allDescriptors) {
+            if (!descriptorMap[fd.student_id]) descriptorMap[fd.student_id] = [];
+            try {
+                const parsed = typeof fd.descriptor === 'string' ? JSON.parse(fd.descriptor) : fd.descriptor;
+                if (Array.isArray(parsed) && parsed.length === 128) {
+                    descriptorMap[fd.student_id].push(parsed);
                 }
+            } catch (e) {
+                console.error(`Erro ao parsear descritor do aluno ${fd.student_id}:`, e);
+            }
+        }
+
+        // Build result with multiple descriptors per student
+        const result = students.map(s => {
+            let descriptors = descriptorMap[s.id] || [];
+
+            // Fallback: check legacy column
+            if (descriptors.length === 0 && s.legacy_descriptor) {
+                try {
+                    const parsed = typeof s.legacy_descriptor === 'string' ? JSON.parse(s.legacy_descriptor) : s.legacy_descriptor;
+                    if (Array.isArray(parsed) && parsed.length === 128) {
+                        descriptors = [parsed];
+                    }
+                } catch (e) { }
             }
 
-            // Validar que é um array de 128 elementos
-            if (!Array.isArray(descriptor) || descriptor.length !== 128) {
-                console.warn(`Descritor inválido para aluno ${s.name} (${s.id}): tamanho ${descriptor?.length} `);
-                return null;
-            }
+            if (descriptors.length === 0) return null;
 
             return {
-                ...s,
-                face_descriptor: descriptor
+                id: s.id,
+                name: s.name,
+                guardian_phone: s.guardian_phone,
+                class_name: s.class_name,
+                photo_url: s.photo_url,
+                face_descriptor: descriptors[0], // backward compat: first descriptor
+                face_descriptors: descriptors,    // ALL descriptors for multi-angle
+                descriptor_count: descriptors.length
             };
-        }).filter(s => s && s.face_descriptor);
+        }).filter(s => s !== null);
 
-        console.log(`📊 Endpoint embeddings: ${students.length} alunos com algum descritor, ${studentsWithParsedDescriptors.length} válidos`);
-        res.json(studentsWithParsedDescriptors);
+        console.log(`📊 Endpoint embeddings: ${result.length} alunos com descritores (multi-angle)`);
+        result.forEach(s => console.log(`   👤 ${s.name}: ${s.descriptor_count} ângulo(s)`));
+        res.json(result);
     } catch (error) {
         console.error('Error fetching student embeddings:', error);
         res.status(500).json({ error: 'Error fetching embeddings' });
@@ -5087,10 +5840,37 @@ app.post('/api/guardian/register', async (req, res) => {
     const db = getSystemDB();
 
     try {
-        // Verificar se email já existe
+        // Verificar se email já existe como guardian
         const existing = db.prepare('SELECT * FROM guardians WHERE email = ?').get(email);
         if (existing) {
             return res.status(400).json({ error: 'Email já cadastrado' });
+        }
+
+        // ==================================================================================
+        // VALIDAÇÃO: Email deve estar pré-cadastrado como parent_email em algum aluno
+        // ==================================================================================
+        const schools = db.prepare('SELECT id, name FROM schools').all();
+        let emailFoundInSchool = false;
+
+        for (const school of schools) {
+            try {
+                const schoolDB = getSchoolDB(school.id);
+                const studentWithEmail = schoolDB.prepare(
+                    'SELECT id FROM students WHERE parent_email = ? LIMIT 1'
+                ).get(email);
+                if (studentWithEmail) {
+                    emailFoundInSchool = true;
+                    break;
+                }
+            } catch (e) {
+                // Ignora erro se DB da escola não existir
+            }
+        }
+
+        if (!emailFoundInSchool) {
+            return res.status(403).json({
+                error: 'Email não autorizado. Este email não está pré-cadastrado em nenhuma escola. Peça à escola para cadastrar seu email como responsável do aluno.'
+            });
         }
 
         // Hash da senha
@@ -6536,9 +7316,22 @@ app.post('/api/guardian/register', async (req, res) => {
         const existing = db.prepare('SELECT id FROM guardians WHERE email = ?').get(email);
         if (existing) return res.status(409).json({ error: 'Email já cadastrado' });
 
+        // VALIDAÇÃO: Email deve estar pré-cadastrado como parent_email em algum aluno
+        const schools = db.prepare('SELECT id FROM schools').all();
+        let emailAuthorized = false;
+        for (const school of schools) {
+            try {
+                const schoolDB = getSchoolDB(school.id);
+                const found = schoolDB.prepare('SELECT id FROM students WHERE parent_email = ? LIMIT 1').get(email);
+                if (found) { emailAuthorized = true; break; }
+            } catch (e) { }
+        }
+        if (!emailAuthorized) {
+            return res.status(403).json({ error: 'Email não autorizado. Este email não está pré-cadastrado em nenhuma escola. Peça à escola para cadastrar seu email como responsável do aluno.' });
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Tabela guardians deve existir (initSystemDB garante, mas por segurança)
         const result = db.prepare(`
             INSERT INTO guardians (email, password, name, phone) VALUES (?, ?, ?, ?)
         `).run(email, hashedPassword, name, phone || '');
@@ -6689,13 +7482,18 @@ app.get('/api/guardian/my-students', authenticateGuardian, (req, res) => {
                 // Adicionar informações da escola a cada aluno e contar mensagens não lidas
                 students.forEach(student => {
                     let unreadCount = 0;
+                    let faceDescCount = 0;
                     try {
                         const unread = schoolDB.prepare("SELECT COUNT(*) as count FROM messages WHERE student_id = ? AND sender_type = 'school' AND read_at IS NULL").get(student.id);
                         unreadCount = unread ? unread.count : 0;
-                        console.log(`[DEBUG-CHAT] Aluno: ${student.name}, Não lidas: ${unreadCount}`);
                     } catch (e) {
                         console.error(`[DEBUG-CHAT] Erro ao contar mensagens: ${e.message}`);
                     }
+
+                    try {
+                        const faceCount = schoolDB.prepare("SELECT COUNT(*) as count FROM face_descriptors WHERE student_id = ?").get(student.id);
+                        faceDescCount = faceCount ? faceCount.count : 0;
+                    } catch (e) { }
 
                     allStudents.push({
                         ...student,
@@ -6706,7 +7504,8 @@ app.get('/api/guardian/my-students', authenticateGuardian, (req, res) => {
                         school_zip_code: school.zip_code,
                         school_latitude: school.latitude,
                         school_longitude: school.longitude,
-                        unread_messages: Number(unreadCount) // Garante que é número
+                        unread_messages: Number(unreadCount),
+                        face_descriptor_count: Number(faceDescCount)
                     });
                 });
 
@@ -6721,6 +7520,85 @@ app.get('/api/guardian/my-students', authenticateGuardian, (req, res) => {
     } catch (e) {
         console.error('[MY-STUDENTS] Erro:', e);
         res.status(500).json({ error: 'Erro ao buscar alunos', details: e.message });
+    }
+});
+
+// =================================================================
+// GUARDIAN: Multi-angle face registration from PWA
+// =================================================================
+app.post('/api/guardian/student/:studentId/face-descriptors', authenticateGuardian, (req, res) => {
+    const guardianId = req.user.id;
+    const { studentId } = req.params;
+    const { school_id, descriptors, front_photo } = req.body;
+    // descriptors = [{ descriptor: "[...]", angle: "front" }, { descriptor: "[...]", angle: "left" }, ...]
+
+    if (!school_id || !descriptors || !Array.isArray(descriptors) || descriptors.length === 0) {
+        return res.status(400).json({ error: 'Dados incompletos. Envie school_id e descriptors (array).' });
+    }
+
+    if (descriptors.length < 3) {
+        return res.status(400).json({ error: 'Mínimo de 3 ângulos necessários para cadastro biométrico.' });
+    }
+
+    try {
+        const schoolDB = getSchoolDB(school_id);
+
+        // Verify guardian has link to this student
+        const link = schoolDB.prepare(
+            'SELECT id FROM student_guardians WHERE student_id = ? AND guardian_id = ? AND status = ?'
+        ).get(studentId, guardianId, 'active');
+
+        if (!link) {
+            return res.status(403).json({ error: 'Você não tem vínculo com este aluno.' });
+        }
+
+        // Verify student exists
+        const student = schoolDB.prepare('SELECT id, name FROM students WHERE id = ?').get(studentId);
+        if (!student) {
+            return res.status(404).json({ error: 'Aluno não encontrado.' });
+        }
+
+        // Delete existing descriptors and save new multi-angle ones
+        schoolDB.prepare('DELETE FROM face_descriptors WHERE student_id = ?').run(studentId);
+
+        const insertStmt = schoolDB.prepare(
+            'INSERT INTO face_descriptors (student_id, descriptor, angle) VALUES (?, ?, ?)'
+        );
+
+        let savedCount = 0;
+        for (const fd of descriptors) {
+            try {
+                // Validate descriptor is a valid 128-element array
+                const desc = typeof fd.descriptor === 'string' ? JSON.parse(fd.descriptor) : fd.descriptor;
+                if (!Array.isArray(desc) || desc.length !== 128) {
+                    console.warn(`⚠️ Descritor inválido (${desc?.length} dims) - ignorando`);
+                    continue;
+                }
+                insertStmt.run(studentId, JSON.stringify(desc), fd.angle || 'unknown');
+                savedCount++;
+            } catch (parseErr) {
+                console.error('Erro ao processar descritor:', parseErr.message);
+            }
+        }
+
+        console.log(`✅ [GUARDIAN FACE] ${savedCount} descritores multi-ângulo salvos para aluno ${student.name} (ID: ${studentId})`);
+
+        // Salvar foto frontal como photo_url do aluno (aparece no painel da escola)
+        if (front_photo && front_photo.startsWith('data:image')) {
+            schoolDB.prepare('UPDATE students SET photo_url = ? WHERE id = ?').run(front_photo, studentId);
+            console.log(`📸 [GUARDIAN FACE] Foto frontal salva como photo_url para aluno ${student.name}`);
+        }
+
+        res.json({
+            success: true,
+            message: `${savedCount} ângulo(s) de biometria facial salvo(s) com sucesso!`,
+            saved_count: savedCount,
+            student_name: student.name
+        });
+
+    } catch (error) {
+        console.error('❌ Erro ao salvar descritores do guardian:', error);
+        res.status(500).json({ error: 'Erro ao salvar biometria facial', message: error.message });
     }
 });
 

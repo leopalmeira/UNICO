@@ -127,7 +127,17 @@ export default function SchoolPickupsManager() {
 
     return (
         <div className="fade-in">
-            <h1 style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '2rem' }}>🎯 Gestão de Portaria</h1>
+            <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                <h1 style={{ fontSize: '2rem', fontWeight: '700', margin: 0 }}>🎯 Gestão de Portaria</h1>
+                <button
+                    onClick={() => window.open('/#/inspector', '_blank')}
+                    className="btn btn-primary"
+                    style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none' }}
+                >
+                    <ShieldCheck size={20} style={{ marginRight: '8px' }} />
+                    Abrir Painel de Operação (Inspetor)
+                </button>
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 

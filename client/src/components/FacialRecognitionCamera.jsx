@@ -79,9 +79,16 @@ export default function FacialRecognitionCamera({
                     if (employeesWithDescriptors.length > 0) {
                         console.log('👔 Funcionários com biometria:', employeesWithDescriptors.map(e => e.name));
 
-                        const labeledDescriptors = employeesWithDescriptors.map(e =>
-                            new faceapi.LabeledFaceDescriptors(e.name, [e.descriptor])
-                        );
+                        const labeledDescriptors = employeesWithDescriptors.map(e => {
+                            // Support multi-angle: use face_descriptors array if available
+                            const descriptors = e.face_descriptors && e.face_descriptors.length > 0
+                                ? e.face_descriptors.map(d => {
+                                    const arr = typeof d === 'string' ? JSON.parse(d) : (Array.isArray(d) ? d : d.descriptor ? (typeof d.descriptor === 'string' ? JSON.parse(d.descriptor) : d.descriptor) : d);
+                                    return new Float32Array(arr);
+                                })
+                                : [e.descriptor];
+                            return new faceapi.LabeledFaceDescriptors(e.name, descriptors);
+                        });
                         faceMatcher.current = new faceapi.FaceMatcher(labeledDescriptors, 0.55);
                         console.log('✅ Matcher facial configurado com', labeledDescriptors.length, 'funcionários');
                     } else {
@@ -152,9 +159,16 @@ export default function FacialRecognitionCamera({
                     if (studentsWithDescriptors.length > 0) {
                         console.log('👥 Alunos com biometria configurada:', studentsWithDescriptors.map(s => s.name));
 
-                        const labeledDescriptors = studentsWithDescriptors.map(s =>
-                            new faceapi.LabeledFaceDescriptors(s.name, [s.descriptor])
-                        );
+                        const labeledDescriptors = studentsWithDescriptors.map(s => {
+                            // Support multi-angle: use face_descriptors array if available
+                            const descriptors = s.face_descriptors && s.face_descriptors.length > 0
+                                ? s.face_descriptors.map(d => {
+                                    const arr = typeof d === 'string' ? JSON.parse(d) : (Array.isArray(d) ? d : d.descriptor ? (typeof d.descriptor === 'string' ? JSON.parse(d.descriptor) : d.descriptor) : d);
+                                    return new Float32Array(arr);
+                                })
+                                : [s.descriptor];
+                            return new faceapi.LabeledFaceDescriptors(s.name, descriptors);
+                        });
                         faceMatcher.current = new faceapi.FaceMatcher(labeledDescriptors, 0.55);
                         console.log('✅ Matcher facial configurado com', labeledDescriptors.length, 'alunos');
                     } else {
@@ -494,24 +508,10 @@ export default function FacialRecognitionCamera({
                             {mode === 'monitoring' ? 'Monitoramento Pedagógico IA' : 'Reconhecimento Facial'}
                         </h2>
                         <span style={{ fontSize: '0.85rem', color: isActive ? '#10b981' : '#64748b' }}>
-                            {isActive ? (modelsLoaded ? 'Sistema Online e Detectando' : 'Carregando Modelos IA...') : 'Câmera Parada'}
+                            {isActive ? (modelsLoaded ? 'Sistema Online e Detectando' : 'Carregando Modelos IA...') : 'Inicializando Câmera...'}
                         </span>
                     </div>
                 </div>
-
-                <button
-                    onClick={isActive ? stopCamera : startCamera}
-                    disabled={!modelsLoaded}
-                    style={{
-                        background: isActive ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-                        color: isActive ? '#ef4444' : '#10b981',
-                        border: `1px solid ${isActive ? '#ef4444' : '#10b981'}`,
-                        padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600',
-                        transition: 'all 0.3s'
-                    }}
-                >
-                    {isActive ? 'Parar Câmera' : 'Ativar Câmera'}
-                </button>
             </div>
 
             {/* Video Area */}

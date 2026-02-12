@@ -9,7 +9,7 @@ import FacialRecognitionCamera from './FacialRecognitionCamera';
 
 export default function AttendancePanel({ schoolId = 1 }) {
     // States
-    const [cameraActive, setCameraActive] = useState(true); // AUTO-START: Câmera já começa ativa
+
     const [todayArrivals, setTodayArrivals] = useState([]);
     const [stats, setStats] = useState({
         totalStudents: 0,
@@ -406,49 +406,26 @@ export default function AttendancePanel({ schoolId = 1 }) {
                 </div>
             </div>
 
-            {/* CAMERA CONTROL & RECOGNITION */}
+            {/* CAMERA RECOGNITION (Always Active) */}
             <div className="glass-panel" style={{ padding: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <Camera size={24} style={{ color: cameraActive ? '#10b981' : 'var(--text-secondary)' }} />
-                        <div>
-                            <h3 style={{ fontSize: '1.25rem', fontWeight: '600' }}>Câmera de Entrada</h3>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                                {cameraActive ? 'Reconhecimento facial ativo' : 'Sistema em espera'}
-                            </p>
-                        </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                    <Camera size={24} style={{ color: '#10b981' }} />
+                    <div>
+                        <h3 style={{ fontSize: '1.25rem', fontWeight: '600' }}>Câmera de Entrada</h3>
+                        <p style={{ color: '#10b981', fontSize: '0.875rem' }}>
+                            Reconhecimento facial ativo • Sistema Online
+                        </p>
                     </div>
-
-                    <button
-                        className="btn"
-                        onClick={() => setCameraActive(!cameraActive)}
-                        style={{
-                            background: cameraActive ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-                            color: cameraActive ? '#ef4444' : '#10b981',
-                            border: `1px solid ${cameraActive ? '#ef4444' : '#10b981'}`,
-                            padding: '0.75rem 2rem',
-                            fontSize: '1rem',
-                            fontWeight: '600',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem'
-                        }}
-                    >
-                        {cameraActive ? <Pause size={20} /> : <Play size={20} />}
-                        {cameraActive ? 'Parar Câmera' : 'Iniciar Câmera'}
-                    </button>
                 </div>
 
-                {cameraActive && (
-                    <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        <FacialRecognitionCamera
-                            schoolId={schoolId}
-                            mode="attendance"
-                            studentsList={students}
-                            onNewArrival={handleNewArrival}
-                        />
-                    </div>
-                )}
+                <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    <FacialRecognitionCamera
+                        schoolId={schoolId}
+                        mode="attendance"
+                        studentsList={students}
+                        onNewArrival={handleNewArrival}
+                    />
+                </div>
             </div>
 
 

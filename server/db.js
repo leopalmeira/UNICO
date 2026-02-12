@@ -226,15 +226,20 @@ function getSchoolDB(schoolId) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Face Descriptors (separate table for better performance)
+    -- Face Descriptors (multiple per student for multi-angle recognition)
     CREATE TABLE IF NOT EXISTS face_descriptors (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER NOT NULL UNIQUE,
+      student_id INTEGER NOT NULL,
       descriptor TEXT NOT NULL,
+      angle TEXT DEFAULT 'front',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
     );
+
+    -- Index for fast lookup by student_id
+    CREATE INDEX IF NOT EXISTS idx_face_descriptors_student
+    ON face_descriptors(student_id);
 
     -- Cameras
     CREATE TABLE IF NOT EXISTS cameras (
@@ -555,6 +560,50 @@ function getSchoolDB(schoolId) {
       FOREIGN KEY (student_id) REFERENCES students(id)
     );
   `);
+
+  // =====================================================
+  // MIGRATION: face_descriptors - remove UNIQUE, add angle
+  // SQLite lacks ALTER TABLE DROP CONSTRAINT, so we recreate
+  // =====================================================
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(face_descriptors)").all();
+    const hasAngle = tableInfo.some(col => col.name === 'angle');
+
+    if (!hasAngle && tableInfo.length > 0) {
+      console.log('🔄 [MIGRATION] Migrando face_descriptors para multi-ângulo...');
+      db.exec(`
+        -- Backup existing data
+        CREATE TABLE IF NOT EXISTS face_descriptors_backup AS SELECT * FROM face_descriptors;
+
+        -- Drop old table
+        DROP TABLE IF EXISTS face_descriptors;
+
+        -- Create new table without UNIQUE constraint, with angle column
+        CREATE TABLE face_descriptors (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          student_id INTEGER NOT NULL,
+          descriptor TEXT NOT NULL,
+          angle TEXT DEFAULT 'front',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+        );
+
+        -- Restore data
+        INSERT INTO face_descriptors (student_id, descriptor, angle, created_at, updated_at)
+        SELECT student_id, descriptor, 'front', created_at, updated_at FROM face_descriptors_backup;
+
+        -- Cleanup backup
+        DROP TABLE IF EXISTS face_descriptors_backup;
+
+        -- Create index
+        CREATE INDEX IF NOT EXISTS idx_face_descriptors_student ON face_descriptors(student_id);
+      `);
+      console.log('✅ [MIGRATION] face_descriptors migrada com sucesso!');
+    }
+  } catch (migErr) {
+    console.error('⚠️ [MIGRATION] Erro na migração de face_descriptors (não fatal):', migErr.message);
+  }
 
   return db;
 }
